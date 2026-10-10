@@ -677,7 +677,7 @@ function AuthModal({ onClose, onNotice }: { onClose: () => void; onNotice: (mess
     <div className="modal-head"><div><span>TRANSFORMATION AND READINESS</span><h2>Welcome back</h2></div><button onClick={onClose}><X size={20} /></button></div>
     <p className="auth-copy">Sign in with your Northstar username. Usernames are not case-sensitive.</p>
     <form onSubmit={submit}>
-      <label>Username<input name="username" required autoComplete="username" placeholder="e.g. KCHALLIS" /></label>
+      <label>Username<input name="username" required autoComplete="username" placeholder="Enter your username" /></label>
       <label>Password<input name="password" type="password" minLength={6} required autoComplete="current-password" placeholder="Your password" /></label>
       {error && <div className="form-error">{error}</div>}
       <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <LogIn size={17} />}{busy ? 'Please wait…' : 'Sign in'}</button>
