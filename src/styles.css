@@ -59,3 +59,26 @@ h1,h2,h3,p { margin-top: 0; }.title-row h1 { font: 700 29px Manrope, sans-serif;
 @media (max-width: 1050px) { .summary-grid { grid-template-columns: 1fr 1fr; }.board { grid-template-columns: repeat(4, 260px); } }
 @media (max-width: 720px) { .app-shell { display: block; }.sidebar { position: static; width: auto; height: auto; padding: 14px; }.sidebar .nav-group, .sidebar .nav-heading, .sidebar-bottom, .workspace-switcher { display: none; }.brand { padding: 0; }.topbar { padding: 0 18px; }.avatar-stack, .share-button { display: none; } main { grid-column: auto; }.content { padding: 26px 18px 45px; }.title-row { align-items: flex-start; gap: 18px; }.title-row h1 { font-size: 23px; }.summary-grid { grid-template-columns: 1fr 1fr; }.board-toolbar { display: block; }.filters { margin-top: 14px; width: fit-content; }.form-grid { grid-template-columns: 1fr; } }
 @media (max-width: 460px) { .summary-grid { grid-template-columns: 1fr; }.summary-card { min-height: 115px; }.search kbd { display: none; }.title-row { flex-direction: column; }.primary { width: 100%; justify-content: center; } }
+
+.sync-state { display: inline-flex; align-items: center; gap: 5px; font-size: 9px; font-weight: 600; color: #8a9491; background: #f0f2ee; border-radius: 12px; padding: 5px 8px; }
+.sync-state.cloud { color: #367b63; background: #eaf5ef; }
+.spin { animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.cloud-banner { margin: -18px 0 24px; border: 1px solid #d8e5df; background: #edf6f2; border-radius: 10px; padding: 10px 13px; display: flex; justify-content: space-between; align-items: center; color: #47635a; font-size: 11px; }
+.cloud-banner > div { display: flex; align-items: center; gap: 8px; }
+.cloud-banner button { border: 0; background: #2f6f59; color: white; border-radius: 7px; padding: 7px 10px; font-size: 10px; font-weight: 600; }
+.notice { margin: -14px 0 22px; display: flex; justify-content: space-between; align-items: center; background: #fff7e8; color: #765a2a; border: 1px solid #edddb8; border-radius: 8px; padding: 9px 12px; font-size: 10px; }
+.notice button { border: 0; background: transparent; color: inherit; }
+.auth-modal { width: min(430px, 100%); }
+.auth-copy { color: #73807b; font-size: 11px; line-height: 1.5; margin-bottom: 20px; }
+.auth-submit { margin-top: 3px; width: 100%; justify-content: center; padding: 11px; }
+.auth-submit:disabled { opacity: .65; cursor: wait; }
+.auth-switch { display: block; margin: 17px auto 0; border: 0; background: transparent; color: #4f7568; font-size: 10px; font-weight: 600; }
+.form-error { background: #fff0ed; color: #b94e3b; border-radius: 7px; padding: 8px 10px; font-size: 10px; }
+
+@media (max-width: 720px) {
+  .sync-state { font-size: 0; }
+  .share-button { display: flex; padding: 7px 9px; font-size: 0; }
+  .cloud-banner { align-items: flex-start; gap: 10px; }
+  .cloud-banner button { flex: 0 0 auto; }
+}

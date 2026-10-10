@@ -1,13 +1,16 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import type { User } from '@supabase/supabase-js'
 import {
-  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, LayoutDashboard,
-  ListTodo, MessageSquare, MoreHorizontal, Plus, Search, Settings, Sparkles,
-  Users, X,
+  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, LayoutDashboard,
+  ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
+  Search, Settings, Sparkles, Users, X,
 } from 'lucide-react'
+import { supabase } from './supabase'
 
 type Status = 'backlog' | 'progress' | 'review' | 'done'
 type Priority = 'Low' | 'Medium' | 'High'
 type Task = { id: number; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
+type TaskInsert = Omit<Task, 'id'>
 
 const columns: { id: Status; label: string; tone: string }[] = [
   { id: 'backlog', label: 'Backlog', tone: 'slate' },
@@ -35,9 +38,60 @@ function App() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | Priority>('All')
   const [showNew, setShowNew] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
   const [dragged, setDragged] = useState<number | null>(null)
+  const [user, setUser] = useState<User | null>(null)
+  const [syncing, setSyncing] = useState(true)
+  const [notice, setNotice] = useState('')
 
-  useEffect(() => localStorage.setItem('northstar-tasks', JSON.stringify(tasks)), [tasks])
+  useEffect(() => {
+    if (!user) localStorage.setItem('northstar-tasks', JSON.stringify(tasks))
+  }, [tasks, user])
+
+  const loadCloudTasks = useCallback(async (activeUser: User) => {
+    setSyncing(true)
+    const { data, error } = await supabase.from('tasks').select('*').order('sort_order').order('created_at')
+    if (error) {
+      setNotice(error.message)
+      setSyncing(false)
+      return
+    }
+    if (data.length === 0) {
+      const starterRows = seed.map(({ id: _id, ...task }, index) => ({ ...task, user_id: activeUser.id, sort_order: index }))
+      const { data: created, error: seedError } = await supabase.from('tasks').insert(starterRows).select()
+      if (seedError) setNotice(seedError.message)
+      else setTasks((created || []) as Task[])
+    } else setTasks(data as Task[])
+    setSyncing(false)
+  }, [])
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      const currentUser = data.session?.user ?? null
+      setUser(currentUser)
+      if (currentUser) loadCloudTasks(currentUser)
+      else setSyncing(false)
+    })
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user ?? null
+      setUser(currentUser)
+      if (currentUser) loadCloudTasks(currentUser)
+      else {
+        const saved = localStorage.getItem('northstar-tasks')
+        setTasks(saved ? JSON.parse(saved) : seed)
+        setSyncing(false)
+      }
+    })
+    return () => listener.subscription.unsubscribe()
+  }, [loadCloudTasks])
+
+  useEffect(() => {
+    if (!user) return
+    const channel = supabase.channel(`tasks:${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, () => loadCloudTasks(user))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user, loadCloudTasks])
 
   const visibleTasks = useMemo(() => tasks.filter(task => {
     const textMatch = `${task.title} ${task.description} ${task.tag}`.toLowerCase().includes(query.toLowerCase())
@@ -47,15 +101,18 @@ function App() {
   const completed = tasks.filter(t => t.status === 'done').length
   const progress = Math.round((completed / Math.max(tasks.length, 1)) * 100)
 
-  function moveTask(id: number, status: Status) {
+  async function moveTask(id: number, status: Status) {
     setTasks(current => current.map(task => task.id === id ? { ...task, status } : task))
+    if (user) {
+      const { error } = await supabase.from('tasks').update({ status }).eq('id', id)
+      if (error) { setNotice(error.message); loadCloudTasks(user) }
+    }
   }
 
-  function addTask(event: FormEvent<HTMLFormElement>) {
+  async function addTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
-    setTasks(current => [...current, {
-      id: Date.now(),
+    const task: TaskInsert = {
       title: String(form.get('title')),
       description: String(form.get('description') || 'No description yet.'),
       status: 'backlog',
@@ -63,8 +120,26 @@ function App() {
       due: String(form.get('due') || 'No date'),
       assignee: String(form.get('assignee')),
       tag: String(form.get('tag') || 'General'),
-    }])
+    }
+    if (user) {
+      const { data, error } = await supabase.from('tasks').insert({ ...task, user_id: user.id, sort_order: tasks.length }).select().single()
+      if (error) setNotice(error.message)
+      else setTasks(current => [...current, data as Task])
+    } else setTasks(current => [...current, { id: Date.now(), ...task }])
     setShowNew(false)
+  }
+
+  async function removeTask(id: number) {
+    setTasks(current => current.filter(task => task.id !== id))
+    if (user) {
+      const { error } = await supabase.from('tasks').delete().eq('id', id)
+      if (error) { setNotice(error.message); loadCloudTasks(user) }
+    }
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut()
+    setNotice('Signed out. Local mode is active.')
   }
 
   return <div className="app-shell">
@@ -93,10 +168,12 @@ function App() {
     <main>
       <header className="topbar">
         <div className="search"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search tasks, projects, or people…" /><kbd>⌘ K</kbd></div>
-        <div className="top-actions"><button className="icon-button"><Bell size={18} /><span className="notification" /></button><div className="avatar-stack">{initials.map(i => <span className="avatar" key={i}>{i}</span>)}</div><button className="share-button"><Users size={16} />Share</button></div>
+        <div className="top-actions"><span className={`sync-state ${user ? 'cloud' : ''}`}>{syncing ? <LoaderCircle size={14} className="spin" /> : <Cloud size={14} />}{syncing ? 'Syncing' : user ? 'Cloud synced' : 'Local mode'}</span><button className="icon-button"><Bell size={18} /><span className="notification" /></button><div className="avatar-stack">{initials.map(i => <span className="avatar" key={i}>{i}</span>)}</div>{user ? <button className="share-button" onClick={signOut}><LogOut size={16} />Sign out</button> : <button className="share-button" onClick={() => setShowAuth(true)}><LogIn size={16} />Sign in</button>}</div>
       </header>
 
       <div className="content">
+        {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
+        {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <div className="eyebrow"><span className="project-dot coral" />WEBSITE LAUNCH</div>
         <div className="title-row"><div><h1>Good afternoon, Jordan</h1><p>Here’s what’s moving across your project today.</p></div><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>
 
@@ -119,7 +196,7 @@ function App() {
                     <div className="task-top"><span className="tag">{task.tag}</span><button aria-label="Task options"><MoreHorizontal size={17} /></button></div>
                     <h3>{task.title}</h3><p>{task.description}</p>
                     <div className="task-meta"><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><span className={task.due === 'Today' ? 'due urgent' : 'due'}><CalendarDays size={13} />{task.due}</span></div>
-                    <div className="task-footer"><span className="avatar">{task.assignee}</span>{task.status === 'done' && <span className="complete"><Check size={13} /> Complete</span>}<button onClick={() => setTasks(current => current.filter(t => t.id !== task.id))}>Remove</button></div>
+                    <div className="task-footer"><span className="avatar">{task.assignee}</span>{task.status === 'done' && <span className="complete"><Check size={13} /> Complete</span>}<button onClick={() => removeTask(task.id)}>Remove</button></div>
                   </article>)}
                   <button className="add-card" onClick={() => setShowNew(true)}><Plus size={16} />Add task</button>
                 </div>
@@ -140,7 +217,44 @@ function App() {
         <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNew(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create task</button></div>
       </form>
     </div></div>}
+    {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}
   </div>
+}
+
+function AuthModal({ onClose, onNotice }: { onClose: () => void; onNotice: (message: string) => void }) {
+  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    const form = new FormData(event.currentTarget)
+    const email = String(form.get('email'))
+    const password = String(form.get('password'))
+    const result = mode === 'signin'
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href.split('#')[0] } })
+    setBusy(false)
+    if (result.error) setError(result.error.message)
+    else {
+      onNotice(mode === 'signup' && !result.data.session ? 'Check your email to confirm your account.' : 'Cloud sync is now active.')
+      onClose()
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal auth-modal" onMouseDown={e => e.stopPropagation()}>
+    <div className="modal-head"><div><span>SECURE CLOUD SYNC</span><h2>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2></div><button onClick={onClose}><X size={20} /></button></div>
+    <p className="auth-copy">Your tasks are protected by Supabase authentication and row-level security.</p>
+    <form onSubmit={submit}>
+      <label>Email address<input name="email" type="email" required autoComplete="email" placeholder="you@example.com" /></label>
+      <label>Password<input name="password" type="password" minLength={6} required autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="At least 6 characters" /></label>
+      {error && <div className="form-error">{error}</div>}
+      <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Cloud size={17} />}{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in and sync' : 'Create account'}</button>
+    </form>
+    <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError('') }}>{mode === 'signin' ? 'New to Northstar? Create an account' : 'Already have an account? Sign in'}</button>
+  </div></div>
 }
 
 export default App
