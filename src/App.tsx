@@ -26,28 +26,32 @@ const columns: { id: Status; label: string; tone: string }[] = [
   { id: 'done', label: 'Done', tone: 'green' },
 ]
 
-const seed: Task[] = [
-  { id: 1, title: 'Map the customer journey', description: 'Document the core paths from first visit to a completed plan.', status: 'backlog', priority: 'High', due: 'Oct 14', assignee: 'AM', tag: 'Research' },
-  { id: 2, title: 'Draft onboarding checklist', description: 'Define the first-run experience for a new workspace.', status: 'backlog', priority: 'Medium', due: 'Oct 16', assignee: 'SK', tag: 'Content' },
-  { id: 3, title: 'Build project overview', description: 'Create the project health and milestone summary.', status: 'progress', priority: 'High', due: 'Today', assignee: 'JD', tag: 'Product' },
-  { id: 4, title: 'Design task details', description: 'Polish task properties, comments, and activity.', status: 'progress', priority: 'Medium', due: 'Oct 13', assignee: 'AM', tag: 'Design' },
-  { id: 5, title: 'Review navigation model', description: 'Validate the workspace and project hierarchy.', status: 'review', priority: 'Low', due: 'Tomorrow', assignee: 'SK', tag: 'UX' },
-  { id: 6, title: 'Set up project repository', description: 'Configure the initial frontend and deployment workflow.', status: 'done', priority: 'High', due: 'Oct 10', assignee: 'JD', tag: 'Engineering' },
-]
+const legacyProjectId = 'local-website'
+const legacyTaskTitles = new Set(['Map the customer journey', 'Draft onboarding checklist', 'Build project overview', 'Design task details', 'Review navigation model', 'Set up project repository'])
+const emptyProject: Project = { id: '', name: 'No project selected', color: 'slate', description: '', notes: '' }
 
-const initials = ['JD', 'AM', 'SK']
-const defaultProject: Project = { id: 'local-website', name: 'Website launch', color: 'coral', description: 'Primary delivery project', notes: '## Project brief\n\nUse this space for goals, decisions, links, and meeting notes.\n\n- [ ] Confirm launch scope\n- [ ] Approve final design' }
+function readLocalProjects() {
+  const stored = JSON.parse(localStorage.getItem('northstar-projects') || '[]') as Project[]
+  return stored.filter(project => String(project.id) !== legacyProjectId)
+}
+
+function readLocalTasks(projects: Project[]) {
+  const stored = JSON.parse(localStorage.getItem('northstar-tasks') || '[]') as Task[]
+  const firstProject = projects[0]?.id
+  return stored
+    .filter(task => !legacyTaskTitles.has(task.title))
+    .map(task => ({ ...task, project_id: String(task.project_id) === legacyProjectId ? firstProject : task.project_id }))
+    .filter(task => task.project_id)
+}
 
 function App() {
   const [projects, setProjects] = useState<Project[]>(() => {
-    const saved = localStorage.getItem('northstar-projects')
-    return saved ? JSON.parse(saved) : [defaultProject]
+    return readLocalProjects()
   })
-  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>(() => localStorage.getItem('northstar-selected-project') || defaultProject.id)
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>(() => localStorage.getItem('northstar-selected-project') || '')
   const [tasks, setTasks] = useState<Task[]>(() => {
-    const saved = localStorage.getItem('northstar-tasks')
-    const stored = saved ? JSON.parse(saved) as Task[] : seed
-    return stored.map(task => ({ ...task, project_id: task.project_id || defaultProject.id }))
+    const localProjects = readLocalProjects()
+    return readLocalTasks(localProjects)
   })
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | Priority>('All')
@@ -84,31 +88,23 @@ function App() {
     setSyncing(true)
     let { data: cloudProjects, error: projectError } = await supabase.from('projects').select('*').order('created_at')
     if (projectError) { setNotice(projectError.message); setSyncing(false); return }
-    if (!cloudProjects?.length) {
-      const created = await supabase.from('projects').insert({ user_id: activeUser.id, name: defaultProject.name, color: defaultProject.color, description: defaultProject.description, notes: defaultProject.notes }).select().single()
-      if (created.error) { setNotice(created.error.message); setSyncing(false); return }
-      cloudProjects = [created.data]
+    const { data: cloudTasks, error: taskError } = await supabase.from('tasks').select('*').order('sort_order').order('created_at')
+    if (taskError) { setNotice(taskError.message); setSyncing(false); return }
+    const legacyTaskIds = (cloudTasks || []).filter(task => legacyTaskTitles.has(task.title)).map(task => task.id)
+    if (legacyTaskIds.length) await supabase.from('tasks').delete().in('id', legacyTaskIds)
+    const retainedTasks = (cloudTasks || []).filter(task => !legacyTaskTitles.has(task.title))
+    const legacyCloudProjects = (cloudProjects || []).filter(project => project.name === 'Website launch' && project.description === 'Primary delivery project')
+    for (const project of legacyCloudProjects) {
+      if (!retainedTasks.some(task => String(task.project_id) === String(project.id))) await supabase.from('projects').delete().eq('id', project.id)
     }
+    cloudProjects = (cloudProjects || []).filter(project => !legacyCloudProjects.some(legacy => String(legacy.id) === String(project.id) && !retainedTasks.some(task => String(task.project_id) === String(project.id))))
     const loadedProjects = cloudProjects as Project[]
     const primaryProject = loadedProjects[0]
     setProjects(loadedProjects)
-    setSelectedProjectId(current => loadedProjects.some(project => String(project.id) === String(current)) ? current : primaryProject.id)
-    const { data, error } = await supabase.from('tasks').select('*').order('sort_order').order('created_at')
-    if (error) {
-      setNotice(error.message)
-      setSyncing(false)
-      return
-    }
-    if (data.length === 0) {
-      const starterRows = seed.map(({ id: _id, ...task }, index) => ({ ...task, project_id: primaryProject.id, user_id: activeUser.id, sort_order: index }))
-      const { data: created, error: seedError } = await supabase.from('tasks').insert(starterRows).select()
-      if (seedError) setNotice(seedError.message)
-      else setTasks((created || []) as Task[])
-    } else {
-      const missingProject = data.filter(task => !task.project_id)
-      if (missingProject.length) await supabase.from('tasks').update({ project_id: primaryProject.id }).is('project_id', null)
-      setTasks(data.map(task => ({ ...task, project_id: task.project_id || primaryProject.id })) as Task[])
-    }
+    setSelectedProjectId(current => loadedProjects.some(project => String(project.id) === String(current)) ? current : primaryProject?.id || '')
+    const missingProject = primaryProject ? retainedTasks.filter(task => !task.project_id) : []
+    if (missingProject.length) await supabase.from('tasks').update({ project_id: primaryProject.id }).is('project_id', null)
+    setTasks(retainedTasks.map(task => ({ ...task, project_id: task.project_id || primaryProject?.id })) as Task[])
     setSyncing(false)
   }, [])
 
@@ -124,12 +120,10 @@ function App() {
       setUser(currentUser)
       if (currentUser) loadCloudTasks(currentUser)
       else {
-        const saved = localStorage.getItem('northstar-tasks')
-        const localProjects = JSON.parse(localStorage.getItem('northstar-projects') || JSON.stringify([defaultProject])) as Project[]
+        const localProjects = readLocalProjects()
         setProjects(localProjects)
-        setSelectedProjectId(localStorage.getItem('northstar-selected-project') || localProjects[0].id)
-        const stored = saved ? JSON.parse(saved) as Task[] : seed
-        setTasks(stored.map(task => ({ ...task, project_id: task.project_id || localProjects[0].id })))
+        setSelectedProjectId(localProjects.some(project => String(project.id) === localStorage.getItem('northstar-selected-project')) ? localStorage.getItem('northstar-selected-project') || '' : localProjects[0]?.id || '')
+        setTasks(readLocalTasks(localProjects))
         setSyncing(false)
       }
     })
@@ -146,7 +140,7 @@ function App() {
   }, [user, loadCloudTasks])
 
   const projectTasks = useMemo(() => tasks.filter(task => String(task.project_id) === String(selectedProjectId)), [tasks, selectedProjectId])
-  const selectedProject = projects.find(project => String(project.id) === String(selectedProjectId)) || projects[0] || defaultProject
+  const selectedProject = projects.find(project => String(project.id) === String(selectedProjectId)) || projects[0] || emptyProject
   const visibleTasks = useMemo(() => projectTasks.filter(task => {
     const textMatch = `${task.title} ${task.description} ${task.tag}`.toLowerCase().includes(query.toLowerCase())
     return textMatch && (filter === 'All' || task.priority === filter)
@@ -154,6 +148,10 @@ function App() {
 
   const completed = projectTasks.filter(t => t.status === 'done').length
   const progress = Math.round((completed / Math.max(projectTasks.length, 1)) * 100)
+  const teamInitials = Array.from(new Set(projectTasks.map(task => task.assignee).filter(Boolean))).slice(0, 4)
+  const nextTask = projectTasks.find(task => task.status !== 'done')
+  const accountName = user?.email?.split('@')[0] || 'Guest'
+  const accountInitial = accountName.slice(0, 1).toUpperCase() || 'G'
 
   async function moveTask(id: number, status: Status) {
     setTasks(current => current.map(task => task.id === id ? { ...task, status } : task))
@@ -310,13 +308,13 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Sparkles size={16} /></div><span>Northstar</span></div>
-      <button className="workspace-switcher"><span className="workspace-avatar">A</span><span><b>Acme Studio</b><small>Team workspace</small></span><ChevronDown size={15} /></button>
+      <button className="workspace-switcher"><span className="workspace-avatar">N</span><span><b>My workspace</b><small>Project hub</small></span><ChevronDown size={15} /></button>
       <nav className="nav-group" aria-label="Main navigation">
         <a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#"><LayoutDashboard size={17} />Overview</a>
         <a className={`nav-item ${view === 'plan' ? 'active' : ''}`} href="#plan"><Target size={17} />Plan</a>
         <a className={`nav-item ${view === 'report' ? 'active' : ''}`} href="#report"><Presentation size={17} />Slides</a>
         <a className="nav-item" href="#board"><ListTodo size={17} />My work <span className="nav-count">{tasks.length}</span></a>
-        <a className="nav-item" href="#"><Bell size={17} />Inbox <span className="dot" /></a>
+        <a className="nav-item" href="#"><Bell size={17} />Inbox</a>
         <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
       </nav>
       <div className="nav-heading"><span>Projects</span><button className="new-project-trigger" type="button" onClick={() => { setProjectError(''); setShowNewProject(true) }} aria-label="Create a new project"><Plus size={14} />New</button></div>
@@ -326,28 +324,29 @@ function App() {
       <div className="sidebar-bottom">
         <a className="nav-item" href="#"><CircleHelp size={17} />Help & resources</a>
         <a className="nav-item" href="#"><Settings size={17} />Settings</a>
-        <div className="profile"><span className="avatar dark">JD</span><span><b>Jordan Davis</b><small>jordan@acme.co</small></span><MoreHorizontal size={17} /></div>
+        <div className="profile"><span className="avatar dark">{accountInitial}</span><span><b>{accountName}</b><small>{user?.email || 'Local workspace'}</small></span><MoreHorizontal size={17} /></div>
       </div>
     </aside>
 
     <main>
       <header className="topbar">
         <div className="search"><Search size={17} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search tasks, projects, or people…" /><kbd>⌘ K</kbd></div>
-        <div className="top-actions"><span className={`sync-state ${user ? 'cloud' : ''}`}>{syncing ? <LoaderCircle size={14} className="spin" /> : <Cloud size={14} />}{syncing ? 'Syncing' : user ? 'Cloud synced' : 'Local mode'}</span><button className="icon-button"><Bell size={18} /><span className="notification" /></button><div className="avatar-stack">{initials.map(i => <span className="avatar" key={i}>{i}</span>)}</div>{user ? <button className="share-button" onClick={signOut}><LogOut size={16} />Sign out</button> : <button className="share-button" onClick={() => setShowAuth(true)}><LogIn size={16} />Sign in</button>}</div>
+        <div className="top-actions"><span className={`sync-state ${user ? 'cloud' : ''}`}>{syncing ? <LoaderCircle size={14} className="spin" /> : <Cloud size={14} />}{syncing ? 'Syncing' : user ? 'Cloud synced' : 'Local mode'}</span><button className="icon-button"><Bell size={18} /></button>{teamInitials.length > 0 && <div className="avatar-stack">{teamInitials.map(i => <span className="avatar" key={i}>{i}</span>)}</div>}{user ? <button className="share-button" onClick={signOut}><LogOut size={16} />Sign out</button> : <button className="share-button" onClick={() => setShowAuth(true)}><LogIn size={16} />Sign in</button>}</div>
       </header>
 
       <div className="content">
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
+        {projects.length === 0 ? <section className="empty-workspace"><div className="empty-workspace-icon"><Sparkles size={24} /></div><span>START FRESH</span><h1>Create your first project</h1><p>Start with a blank project or ask Gemini to build the plan, tasks, and timeline from a short description.</p><div><button className="primary" onClick={() => { setProjectError(''); setShowNewProject(true) }}><Plus size={17} />Create project</button><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button></div></section> : <>
         <div className="eyebrow"><span className={`project-dot ${selectedProject.color}`} />{selectedProject.name.toUpperCase()}</div>
-        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : view === 'report' ? 'Project slides' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : view === 'report' ? 'Choose the visuals that tell the clearest project story.' : 'Here’s what’s moving across your project today.'}</p></div>{view !== 'report' && <div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>}</div>
+        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : view === 'report' ? 'Project slides' : 'Project overview'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : view === 'report' ? 'Choose the visuals that tell the clearest project story.' : 'Track progress, priorities, and delivery in one place.'}</p></div>{view !== 'report' && <div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>}</div>
 
         {view === 'report' ? <ReportStudio project={selectedProject} tasks={projectTasks} /> : view === 'plan' ? <PlanView key={selectedProject.id} project={selectedProject} tasks={projectTasks} progress={progress} onOpenTask={setSelectedTask} onUpdateNotes={updateProjectNotes} /> : <>
         <section className="summary-grid">
           <article className="summary-card"><div className="summary-label"><span>Project progress</span><span className="trend">On track</span></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{completed} of {projectTasks.length} tasks completed</small></article>
           <article className="summary-card"><div className="summary-label"><span>Open tasks</span><ListTodo size={18} /></div><strong>{projectTasks.length - completed}</strong><small><b>{projectTasks.filter(t => t.priority === 'High' && t.status !== 'done').length} high priority</b> need attention</small></article>
-          <article className="summary-card"><div className="summary-label"><span>Team</span><Users size={18} /></div><div className="large-avatars">{initials.map(i => <span className="avatar" key={i}>{i}</span>)}<span className="avatar more">+2</span></div><small>5 people contributing this week</small></article>
-          <article className="summary-card"><div className="summary-label"><span>Next milestone</span><CalendarDays size={18} /></div><strong className="milestone">Design sign-off</strong><small><Clock3 size={13} /> Friday, 16 October</small></article>
+          <article className="summary-card"><div className="summary-label"><span>Team</span><Users size={18} /></div><div className="large-avatars">{teamInitials.length ? teamInitials.map(i => <span className="avatar" key={i}>{i}</span>) : <span className="empty-metric">—</span>}</div><small>{teamInitials.length ? `${teamInitials.length} contributor${teamInitials.length === 1 ? '' : 's'} assigned` : 'No contributors assigned'}</small></article>
+          <article className="summary-card"><div className="summary-label"><span>Next task</span><CalendarDays size={18} /></div><strong className="milestone">{nextTask?.title || 'Nothing scheduled'}</strong><small><Clock3 size={13} /> {nextTask?.due || 'Add a task to begin'}</small></article>
         </section>
 
         <section className="board-section" id="board">
@@ -371,6 +370,7 @@ function App() {
           </div>
         </section>
         </>}
+        </>}
       </div>
     </main>
 
@@ -379,7 +379,7 @@ function App() {
       <form onSubmit={addTask}>
         <label>Task name<input name="title" required autoFocus placeholder="e.g. Prepare launch announcement" /></label>
         <label>Description<textarea name="description" rows={3} placeholder="Add context or a clear outcome…" /></label>
-        <div className="form-grid"><label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></select></label><label>Assignee<select name="assignee"><option>JD</option><option>AM</option><option>SK</option></select></label></div>
+        <div className="form-grid"><label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></select></label><label>Assignee<input name="assignee" placeholder="e.g. JD" /></label></div>
         <div className="form-grid"><label>Due date<input name="due" placeholder="e.g. Friday" /></label><label>Category<input name="tag" placeholder="e.g. Design" /></label></div>
         <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNew(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create task</button></div>
       </form>
