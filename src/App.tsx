@@ -1,6 +1,8 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import {
   Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Flag, LayoutDashboard,
   ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
@@ -10,7 +12,9 @@ import { supabase } from './supabase'
 
 type Status = 'backlog' | 'progress' | 'review' | 'done'
 type Priority = 'Low' | 'Medium' | 'High'
-type Task = { id: number; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
+type ProjectId = number | string
+type Project = { id: ProjectId; name: string; color: string; description: string; notes: string }
+type Task = { id: number; project_id?: ProjectId | null; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
 type TaskInsert = Omit<Task, 'id'>
 type View = 'overview' | 'plan'
 
@@ -31,17 +35,25 @@ const seed: Task[] = [
 ]
 
 const initials = ['JD', 'AM', 'SK']
+const defaultProject: Project = { id: 'local-website', name: 'Website launch', color: 'coral', description: 'Primary delivery project', notes: '## Project brief\n\nUse this space for goals, decisions, links, and meeting notes.\n\n- [ ] Confirm launch scope\n- [ ] Approve final design' }
 
 function App() {
+  const [projects, setProjects] = useState<Project[]>(() => {
+    const saved = localStorage.getItem('northstar-projects')
+    return saved ? JSON.parse(saved) : [defaultProject]
+  })
+  const [selectedProjectId, setSelectedProjectId] = useState<ProjectId>(() => localStorage.getItem('northstar-selected-project') || defaultProject.id)
   const [tasks, setTasks] = useState<Task[]>(() => {
     const saved = localStorage.getItem('northstar-tasks')
-    return saved ? JSON.parse(saved) : seed
+    const stored = saved ? JSON.parse(saved) as Task[] : seed
+    return stored.map(task => ({ ...task, project_id: task.project_id || defaultProject.id }))
   })
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | Priority>('All')
   const [showNew, setShowNew] = useState(false)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showAuth, setShowAuth] = useState(false)
+  const [showNewProject, setShowNewProject] = useState(false)
   const [dragged, setDragged] = useState<number | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
@@ -55,11 +67,26 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!user) localStorage.setItem('northstar-tasks', JSON.stringify(tasks))
-  }, [tasks, user])
+    if (!user) {
+      localStorage.setItem('northstar-tasks', JSON.stringify(tasks))
+      localStorage.setItem('northstar-projects', JSON.stringify(projects))
+      localStorage.setItem('northstar-selected-project', String(selectedProjectId))
+    }
+  }, [tasks, projects, selectedProjectId, user])
 
   const loadCloudTasks = useCallback(async (activeUser: User) => {
     setSyncing(true)
+    let { data: cloudProjects, error: projectError } = await supabase.from('projects').select('*').order('created_at')
+    if (projectError) { setNotice(projectError.message); setSyncing(false); return }
+    if (!cloudProjects?.length) {
+      const created = await supabase.from('projects').insert({ user_id: activeUser.id, name: defaultProject.name, color: defaultProject.color, description: defaultProject.description, notes: defaultProject.notes }).select().single()
+      if (created.error) { setNotice(created.error.message); setSyncing(false); return }
+      cloudProjects = [created.data]
+    }
+    const loadedProjects = cloudProjects as Project[]
+    const primaryProject = loadedProjects[0]
+    setProjects(loadedProjects)
+    setSelectedProjectId(current => loadedProjects.some(project => String(project.id) === String(current)) ? current : primaryProject.id)
     const { data, error } = await supabase.from('tasks').select('*').order('sort_order').order('created_at')
     if (error) {
       setNotice(error.message)
@@ -67,11 +94,15 @@ function App() {
       return
     }
     if (data.length === 0) {
-      const starterRows = seed.map(({ id: _id, ...task }, index) => ({ ...task, user_id: activeUser.id, sort_order: index }))
+      const starterRows = seed.map(({ id: _id, ...task }, index) => ({ ...task, project_id: primaryProject.id, user_id: activeUser.id, sort_order: index }))
       const { data: created, error: seedError } = await supabase.from('tasks').insert(starterRows).select()
       if (seedError) setNotice(seedError.message)
       else setTasks((created || []) as Task[])
-    } else setTasks(data as Task[])
+    } else {
+      const missingProject = data.filter(task => !task.project_id)
+      if (missingProject.length) await supabase.from('tasks').update({ project_id: primaryProject.id }).is('project_id', null)
+      setTasks(data.map(task => ({ ...task, project_id: task.project_id || primaryProject.id })) as Task[])
+    }
     setSyncing(false)
   }, [])
 
@@ -88,7 +119,11 @@ function App() {
       if (currentUser) loadCloudTasks(currentUser)
       else {
         const saved = localStorage.getItem('northstar-tasks')
-        setTasks(saved ? JSON.parse(saved) : seed)
+        const localProjects = JSON.parse(localStorage.getItem('northstar-projects') || JSON.stringify([defaultProject])) as Project[]
+        setProjects(localProjects)
+        setSelectedProjectId(localStorage.getItem('northstar-selected-project') || localProjects[0].id)
+        const stored = saved ? JSON.parse(saved) as Task[] : seed
+        setTasks(stored.map(task => ({ ...task, project_id: task.project_id || localProjects[0].id })))
         setSyncing(false)
       }
     })
@@ -99,17 +134,20 @@ function App() {
     if (!user) return
     const channel = supabase.channel(`tasks:${user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${user.id}` }, () => loadCloudTasks(user))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects', filter: `user_id=eq.${user.id}` }, () => loadCloudTasks(user))
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [user, loadCloudTasks])
 
-  const visibleTasks = useMemo(() => tasks.filter(task => {
+  const projectTasks = useMemo(() => tasks.filter(task => String(task.project_id) === String(selectedProjectId)), [tasks, selectedProjectId])
+  const selectedProject = projects.find(project => String(project.id) === String(selectedProjectId)) || projects[0] || defaultProject
+  const visibleTasks = useMemo(() => projectTasks.filter(task => {
     const textMatch = `${task.title} ${task.description} ${task.tag}`.toLowerCase().includes(query.toLowerCase())
     return textMatch && (filter === 'All' || task.priority === filter)
-  }), [tasks, query, filter])
+  }), [projectTasks, query, filter])
 
-  const completed = tasks.filter(t => t.status === 'done').length
-  const progress = Math.round((completed / Math.max(tasks.length, 1)) * 100)
+  const completed = projectTasks.filter(t => t.status === 'done').length
+  const progress = Math.round((completed / Math.max(projectTasks.length, 1)) * 100)
 
   async function moveTask(id: number, status: Status) {
     setTasks(current => current.map(task => task.id === id ? { ...task, status } : task))
@@ -123,6 +161,7 @@ function App() {
     event.preventDefault()
     const form = new FormData(event.currentTarget)
     const task: TaskInsert = {
+      project_id: selectedProject.id,
       title: String(form.get('title')),
       description: String(form.get('description') || 'No description yet.'),
       status: 'backlog',
@@ -132,7 +171,7 @@ function App() {
       tag: String(form.get('tag') || 'General'),
     }
     if (user) {
-      const { data, error } = await supabase.from('tasks').insert({ ...task, user_id: user.id, sort_order: tasks.length }).select().single()
+      const { data, error } = await supabase.from('tasks').insert({ ...task, user_id: user.id, sort_order: projectTasks.length }).select().single()
       if (error) setNotice(error.message)
       else setTasks(current => [...current, data as Task])
     } else setTasks(current => [...current, { id: Date.now(), ...task }])
@@ -181,6 +220,46 @@ function App() {
     setNotice('Task duplicated in Backlog.')
   }
 
+  async function addProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    const project = { name: String(form.get('name')), description: String(form.get('description') || ''), color: String(form.get('color') || 'violet'), notes: '' }
+    if (user) {
+      const { data, error } = await supabase.from('projects').insert({ ...project, user_id: user.id }).select().single()
+      if (error) { setNotice(error.message); return }
+      setProjects(current => [...current, data as Project])
+      setSelectedProjectId(data.id)
+    } else {
+      const localProject = { ...project, id: `local-${Date.now()}` }
+      setProjects(current => [...current, localProject])
+      setSelectedProjectId(localProject.id)
+    }
+    setShowNewProject(false)
+    window.location.hash = '#plan'
+  }
+
+  async function removeProject(project: Project) {
+    if (projects.length === 1) { setNotice('Create another project before removing this one.'); return }
+    if (!window.confirm(`Remove “${project.name}” and all of its tasks?`)) return
+    if (user) {
+      const { error } = await supabase.from('projects').delete().eq('id', project.id)
+      if (error) { setNotice(error.message); return }
+    }
+    setProjects(current => current.filter(item => item.id !== project.id))
+    setTasks(current => current.filter(task => String(task.project_id) !== String(project.id)))
+    const nextProject = projects.find(item => item.id !== project.id)!
+    setSelectedProjectId(nextProject.id)
+    setNotice('Project removed.')
+  }
+
+  async function updateProjectNotes(notes: string) {
+    setProjects(current => current.map(project => project.id === selectedProject.id ? { ...project, notes } : project))
+    if (user) {
+      const { error } = await supabase.from('projects').update({ notes }).eq('id', selectedProject.id)
+      if (error) setNotice(error.message)
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setNotice('Signed out. Local mode is active.')
@@ -197,11 +276,9 @@ function App() {
         <a className="nav-item" href="#"><Bell size={17} />Inbox <span className="dot" /></a>
         <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
       </nav>
-      <div className="nav-heading"><span>Projects</span><Plus size={15} /></div>
+      <div className="nav-heading"><span>Projects</span><button onClick={() => setShowNewProject(true)} aria-label="Add project"><Plus size={15} /></button></div>
       <nav className="nav-group projects">
-        <a className="nav-item selected" href="#board"><span className="project-dot coral" />Website launch</a>
-        <a className="nav-item" href="#"><span className="project-dot violet" />Mobile app</a>
-        <a className="nav-item" href="#"><span className="project-dot mint" />Brand refresh</a>
+        {projects.map(project => <div className={`project-nav-row ${String(project.id) === String(selectedProjectId) ? 'selected' : ''}`} key={project.id}><button className="project-select" onClick={() => { setSelectedProjectId(project.id); window.location.hash = '#plan' }}><span className={`project-dot ${project.color}`} />{project.name}</button><button className="project-remove" onClick={() => removeProject(project)} aria-label={`Remove ${project.name}`}><X size={13} /></button></div>)}
       </nav>
       <div className="sidebar-bottom">
         <a className="nav-item" href="#"><CircleHelp size={17} />Help & resources</a>
@@ -219,13 +296,13 @@ function App() {
       <div className="content">
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
-        <div className="eyebrow"><span className="project-dot coral" />WEBSITE LAUNCH</div>
+        <div className="eyebrow"><span className={`project-dot ${selectedProject.color}`} />{selectedProject.name.toUpperCase()}</div>
         <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : 'Here’s what’s moving across your project today.'}</p></div><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>
 
-        {view === 'plan' ? <PlanView tasks={tasks} progress={progress} onOpenTask={setSelectedTask} /> : <>
+        {view === 'plan' ? <PlanView key={selectedProject.id} project={selectedProject} tasks={projectTasks} progress={progress} onOpenTask={setSelectedTask} onUpdateNotes={updateProjectNotes} /> : <>
         <section className="summary-grid">
-          <article className="summary-card"><div className="summary-label"><span>Project progress</span><span className="trend">On track</span></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{completed} of {tasks.length} tasks completed</small></article>
-          <article className="summary-card"><div className="summary-label"><span>Open tasks</span><ListTodo size={18} /></div><strong>{tasks.length - completed}</strong><small><b>{tasks.filter(t => t.priority === 'High' && t.status !== 'done').length} high priority</b> need attention</small></article>
+          <article className="summary-card"><div className="summary-label"><span>Project progress</span><span className="trend">On track</span></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{completed} of {projectTasks.length} tasks completed</small></article>
+          <article className="summary-card"><div className="summary-label"><span>Open tasks</span><ListTodo size={18} /></div><strong>{projectTasks.length - completed}</strong><small><b>{projectTasks.filter(t => t.priority === 'High' && t.status !== 'done').length} high priority</b> need attention</small></article>
           <article className="summary-card"><div className="summary-label"><span>Team</span><Users size={18} /></div><div className="large-avatars">{initials.map(i => <span className="avatar" key={i}>{i}</span>)}<span className="avatar more">+2</span></div><small>5 people contributing this week</small></article>
           <article className="summary-card"><div className="summary-label"><span>Next milestone</span><CalendarDays size={18} /></div><strong className="milestone">Design sign-off</strong><small><Clock3 size={13} /> Friday, 16 October</small></article>
         </section>
@@ -275,6 +352,15 @@ function App() {
         <div className="modal-actions split-actions"><button type="button" className="text-button" onClick={() => duplicateTask(selectedTask)}>Duplicate</button><span /><button type="button" className="cancel" onClick={() => setSelectedTask(null)}>Cancel</button><button type="submit" className="primary"><Check size={17} />Save changes</button></div>
       </form>
     </div></div>}
+    {showNewProject && <div className="modal-backdrop" onMouseDown={() => setShowNewProject(false)}><div className="modal auth-modal" onMouseDown={event => event.stopPropagation()}>
+      <div className="modal-head"><div><span>NEW PROJECT</span><h2>Create a project</h2></div><button onClick={() => setShowNewProject(false)}><X size={20} /></button></div>
+      <form onSubmit={addProject}>
+        <label>Project name<input name="name" required autoFocus maxLength={80} placeholder="e.g. Customer portal" /></label>
+        <label>Description<textarea name="description" rows={3} placeholder="What outcome will this project deliver?" /></label>
+        <label>Colour<select name="color"><option value="violet">Violet</option><option value="coral">Coral</option><option value="mint">Mint</option></select></label>
+        <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNewProject(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create project</button></div>
+      </form>
+    </div></div>}
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}
   </div>
 }
@@ -292,13 +378,15 @@ const initialPlan: PlanConfig = {
   ],
 }
 
-function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: number; onOpenTask: (task: Task) => void }) {
+function PlanView({ project, tasks, progress, onOpenTask, onUpdateNotes }: { project: Project; tasks: Task[]; progress: number; onOpenTask: (task: Task) => void; onUpdateNotes: (notes: string) => void }) {
   const [plan, setPlan] = useState<PlanConfig>(() => {
-    const saved = localStorage.getItem('northstar-plan')
+    const saved = localStorage.getItem(`northstar-plan-${project.id}`)
     return saved ? JSON.parse(saved) : initialPlan
   })
   const [draft, setDraft] = useState<PlanConfig>(plan)
   const [editing, setEditing] = useState(false)
+  const [notes, setNotes] = useState(project.notes || '')
+  const notesRef = useRef<HTMLTextAreaElement>(null)
   const statusCounts = columns.map(column => ({ ...column, count: tasks.filter(task => task.status === column.id).length }))
   const highPriority = tasks.filter(task => task.priority === 'High' && task.status !== 'done')
   const nextTask = tasks.find(task => task.status !== 'done')
@@ -316,18 +404,29 @@ function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: nu
     const newEnd = new Date(startMs + days * day).toISOString().slice(0, 10)
     const next = { ...plan, horizon, end: newEnd }
     setPlan(next)
-    localStorage.setItem('northstar-plan', JSON.stringify(next))
+    localStorage.setItem(`northstar-plan-${project.id}`, JSON.stringify(next))
   }
 
   function savePlan(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (new Date(draft.end) <= new Date(draft.start)) return
     setPlan(draft)
-    localStorage.setItem('northstar-plan', JSON.stringify(draft))
+    localStorage.setItem(`northstar-plan-${project.id}`, JSON.stringify(draft))
     setEditing(false)
   }
 
   function editPlan() { setDraft(plan); setEditing(true) }
+
+  function formatNotes(prefix: string, suffix = prefix, placeholder = 'text') {
+    const input = notesRef.current
+    if (!input) return
+    const start = input.selectionStart
+    const end = input.selectionEnd
+    const selected = notes.slice(start, end) || placeholder
+    const next = `${notes.slice(0, start)}${prefix}${selected}${suffix}${notes.slice(end)}`
+    setNotes(next)
+    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(start + prefix.length, start + prefix.length + selected.length) })
+  }
 
   return <section className="plan-page" aria-label="Project plan overview">
     <div className="plan-kpis">
@@ -358,6 +457,11 @@ function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: nu
         <div className="focus-list">{highPriority.length ? highPriority.slice(0, 3).map(task => <button key={task.id} onClick={() => onOpenTask(task)}><span className="avatar">{task.assignee}</span><span><strong>{task.title}</strong><small>{task.tag} · {task.due}</small></span><ChevronDown size={15} /></button>) : <p className="empty-state">No high-priority work is waiting.</p>}</div>
       </article>
     </div>
+    <article className="notes-panel">
+      <div className="panel-heading"><div><span>PROJECT CANVAS</span><h2>Plan notes</h2></div><span className="markdown-status">Markdown enabled</span></div>
+      <div className="markdown-toolbar" aria-label="Text formatting"><button onClick={() => formatNotes('## ', '', 'Heading')}>H2</button><button onClick={() => formatNotes('**', '**', 'bold text')}><b>B</b></button><button onClick={() => formatNotes('*', '*', 'italic text')}><i>I</i></button><button onClick={() => formatNotes('- ', '', 'List item')}>• List</button><button onClick={() => formatNotes('- [ ] ', '', 'Task')}>☐ Task</button><button onClick={() => formatNotes('[', '](https://)', 'link text')}>Link</button><button onClick={() => formatNotes('> ', '', 'Quote')}>❝ Quote</button></div>
+      <div className="markdown-workspace"><label><span>WRITE</span><textarea ref={notesRef} value={notes} onChange={event => setNotes(event.target.value)} onBlur={() => onUpdateNotes(notes)} placeholder="Write a project brief, decisions, meeting notes, or links…" /></label><div className="markdown-preview"><span>PREVIEW</span><div className="markdown-body">{notes.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{notes}</ReactMarkdown> : <p className="empty-state">Formatted notes will appear here.</p>}</div></div></div>
+    </article>
     {editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><div className="modal plan-editor" onMouseDown={event => event.stopPropagation()}>
       <div className="modal-head"><div><span>PLAN SETTINGS</span><h2>Edit timeline</h2></div><button onClick={() => setEditing(false)}><X size={20} /></button></div>
       <form onSubmit={savePlan}>
