@@ -38,6 +38,7 @@ function App() {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<'All' | Priority>('All')
   const [showNew, setShowNew] = useState(false)
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [dragged, setDragged] = useState<number | null>(null)
   const [user, setUser] = useState<User | null>(null)
@@ -137,6 +138,40 @@ function App() {
     }
   }
 
+  async function updateTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedTask) return
+    const form = new FormData(event.currentTarget)
+    const changes: TaskInsert = {
+      title: String(form.get('title')),
+      description: String(form.get('description') || 'No description yet.'),
+      status: form.get('status') as Status,
+      priority: form.get('priority') as Priority,
+      due: String(form.get('due') || 'No date'),
+      assignee: String(form.get('assignee')),
+      tag: String(form.get('tag') || 'General'),
+    }
+    setTasks(current => current.map(task => task.id === selectedTask.id ? { ...task, ...changes } : task))
+    if (user) {
+      const { error } = await supabase.from('tasks').update(changes).eq('id', selectedTask.id)
+      if (error) { setNotice(error.message); loadCloudTasks(user) }
+      else setNotice('Task updated.')
+    }
+    setSelectedTask(null)
+  }
+
+  async function duplicateTask(task: Task) {
+    const copy: TaskInsert = { ...task, title: `${task.title} (copy)`, status: 'backlog' }
+    const { id: _id, ...insert } = copy as Task
+    if (user) {
+      const { data, error } = await supabase.from('tasks').insert({ ...insert, user_id: user.id, sort_order: tasks.length }).select().single()
+      if (error) setNotice(error.message)
+      else setTasks(current => [...current, data as Task])
+    } else setTasks(current => [...current, { ...insert, id: Date.now() }])
+    setSelectedTask(null)
+    setNotice('Task duplicated in Backlog.')
+  }
+
   async function signOut() {
     await supabase.auth.signOut()
     setNotice('Signed out. Local mode is active.')
@@ -192,11 +227,11 @@ function App() {
               return <div className="column" key={column.id} onDragOver={e => e.preventDefault()} onDrop={() => { if (dragged) moveTask(dragged, column.id); setDragged(null) }}>
                 <div className="column-head"><div><span className={`status-dot ${column.tone}`} />{column.label}<span className="column-count">{items.length}</span></div><button onClick={() => setShowNew(true)} aria-label={`Add task to ${column.label}`}><Plus size={16} /></button></div>
                 <div className="cards">
-                  {items.map(task => <article className="task-card" draggable key={task.id} onDragStart={() => setDragged(task.id)}>
+                  {items.map(task => <article className="task-card" draggable key={task.id} onDragStart={() => setDragged(task.id)} onClick={() => setSelectedTask(task)}>
                     <div className="task-top"><span className="tag">{task.tag}</span><button aria-label="Task options"><MoreHorizontal size={17} /></button></div>
                     <h3>{task.title}</h3><p>{task.description}</p>
                     <div className="task-meta"><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span><span className={task.due === 'Today' ? 'due urgent' : 'due'}><CalendarDays size={13} />{task.due}</span></div>
-                    <div className="task-footer"><span className="avatar">{task.assignee}</span>{task.status === 'done' && <span className="complete"><Check size={13} /> Complete</span>}<button onClick={() => removeTask(task.id)}>Remove</button></div>
+                    <div className="task-footer"><span className="avatar">{task.assignee}</span>{task.status === 'done' && <span className="complete"><Check size={13} /> Complete</span>}<button onClick={e => { e.stopPropagation(); removeTask(task.id) }}>Remove</button></div>
                   </article>)}
                   <button className="add-card" onClick={() => setShowNew(true)}><Plus size={16} />Add task</button>
                 </div>
@@ -215,6 +250,17 @@ function App() {
         <div className="form-grid"><label>Priority<select name="priority" defaultValue="Medium"><option>Low</option><option>Medium</option><option>High</option></select></label><label>Assignee<select name="assignee"><option>JD</option><option>AM</option><option>SK</option></select></label></div>
         <div className="form-grid"><label>Due date<input name="due" placeholder="e.g. Friday" /></label><label>Category<input name="tag" placeholder="e.g. Design" /></label></div>
         <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNew(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create task</button></div>
+      </form>
+    </div></div>}
+    {selectedTask && <div className="modal-backdrop" onMouseDown={() => setSelectedTask(null)}><div className="modal task-detail-modal" onMouseDown={e => e.stopPropagation()}>
+      <div className="modal-head"><div><span>TASK DETAILS</span><h2>Edit task</h2></div><button onClick={() => setSelectedTask(null)}><X size={20} /></button></div>
+      <form onSubmit={updateTask}>
+        <label>Task name<input name="title" required autoFocus defaultValue={selectedTask.title} /></label>
+        <label>Description<textarea name="description" rows={4} defaultValue={selectedTask.description} /></label>
+        <div className="form-grid"><label>Status<select name="status" defaultValue={selectedTask.status}>{columns.map(column => <option key={column.id} value={column.id}>{column.label}</option>)}</select></label><label>Priority<select name="priority" defaultValue={selectedTask.priority}><option>Low</option><option>Medium</option><option>High</option></select></label></div>
+        <div className="form-grid"><label>Assignee<select name="assignee" defaultValue={selectedTask.assignee}><option>JD</option><option>AM</option><option>SK</option></select></label><label>Due date<input name="due" defaultValue={selectedTask.due} /></label></div>
+        <label>Category<input name="tag" defaultValue={selectedTask.tag} /></label>
+        <div className="modal-actions split-actions"><button type="button" className="text-button" onClick={() => duplicateTask(selectedTask)}>Duplicate</button><span /><button type="button" className="cancel" onClick={() => setSelectedTask(null)}>Cancel</button><button type="submit" className="primary"><Check size={17} />Save changes</button></div>
       </form>
     </div></div>}
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}

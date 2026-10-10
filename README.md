@@ -8,6 +8,8 @@ A focused project-management MVP built with React, TypeScript, and Vite.
 - Searchable, filterable Kanban board
 - Drag-and-drop task status changes
 - Task creation and deletion
+- Full task editing, including status, priority, assignee, due date, and category
+- One-click task duplication into the backlog
 - Local browser persistence
 - Supabase email authentication and secure cloud synchronization
 - Row-level security so each user can access only their own tasks
