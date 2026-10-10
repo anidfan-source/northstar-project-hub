@@ -17,7 +17,9 @@ type Project = { id: ProjectId; name: string; color: string; description: string
 type GeneratedProject = { name: string; description: string; color: string; notes: string; phases: { name: string; startOffset: number; durationDays: number }[]; tasks: { title: string; description: string; phaseIndex: number; priority: Priority; assignee: string; tag: string }[] }
 type Task = { id: number; project_id?: ProjectId | null; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
 type TaskInsert = Omit<Task, 'id'>
-type View = 'overview' | 'plan' | 'report'
+type Profile = { user_id: string; username: string; team_id: string; must_change_password: boolean }
+type TeamMessage = { id: number; team_id: string; sender_id: string; body: string; created_at: string }
+type View = 'overview' | 'plan' | 'report' | 'messages'
 
 const columns: { id: Status; label: string; tone: string }[] = [
   { id: 'backlog', label: 'Backlog', tone: 'slate' },
@@ -68,10 +70,14 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<View>(() => window.location.hash === '#plan' ? 'plan' : window.location.hash === '#report' ? 'report' : 'overview')
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [members, setMembers] = useState<Profile[]>([])
+  const [messages, setMessages] = useState<TeamMessage[]>([])
+  const routeView = () => window.location.hash === '#plan' ? 'plan' : window.location.hash === '#report' ? 'report' : window.location.hash === '#messages' ? 'messages' : 'overview'
+  const [view, setView] = useState<View>(routeView)
 
   useEffect(() => {
-    const syncView = () => setView(window.location.hash === '#plan' ? 'plan' : window.location.hash === '#report' ? 'report' : 'overview')
+    const syncView = () => setView(routeView())
     window.addEventListener('hashchange', syncView)
     return () => window.removeEventListener('hashchange', syncView)
   }, [])
@@ -108,18 +114,31 @@ function App() {
     setSyncing(false)
   }, [])
 
+  const loadCollaboration = useCallback(async (activeUser: User) => {
+    const { data: currentProfile, error } = await supabase.from('profiles').select('*').eq('user_id', activeUser.id).single()
+    if (error) { setNotice(error.message); return }
+    setProfile(currentProfile as Profile)
+    const [{ data: teamMembers }, { data: teamMessages }] = await Promise.all([
+      supabase.from('profiles').select('*').eq('team_id', currentProfile.team_id).order('username'),
+      supabase.from('messages').select('*').eq('team_id', currentProfile.team_id).order('created_at'),
+    ])
+    setMembers((teamMembers || []) as Profile[])
+    setMessages((teamMessages || []) as TeamMessage[])
+  }, [])
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       const currentUser = data.session?.user ?? null
       setUser(currentUser)
-      if (currentUser) loadCloudTasks(currentUser)
+      if (currentUser) { loadCloudTasks(currentUser); loadCollaboration(currentUser) }
       else setSyncing(false)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       const currentUser = session?.user ?? null
       setUser(currentUser)
-      if (currentUser) loadCloudTasks(currentUser)
+      if (currentUser) { loadCloudTasks(currentUser); loadCollaboration(currentUser) }
       else {
+        setProfile(null); setMembers([]); setMessages([])
         const localProjects = readLocalProjects()
         setProjects(localProjects)
         setSelectedProjectId(localProjects.some(project => String(project.id) === localStorage.getItem('northstar-selected-project')) ? localStorage.getItem('northstar-selected-project') || '' : localProjects[0]?.id || '')
@@ -128,7 +147,7 @@ function App() {
       }
     })
     return () => listener.subscription.unsubscribe()
-  }, [loadCloudTasks])
+  }, [loadCloudTasks, loadCollaboration])
 
   useEffect(() => {
     if (!user) return
@@ -139,6 +158,14 @@ function App() {
     return () => { supabase.removeChannel(channel) }
   }, [user, loadCloudTasks])
 
+  useEffect(() => {
+    if (!user || !profile) return
+    const channel = supabase.channel(`messages:${profile.team_id}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `team_id=eq.${profile.team_id}` }, payload => setMessages(current => [...current, payload.new as TeamMessage]))
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [user, profile])
+
   const projectTasks = useMemo(() => tasks.filter(task => String(task.project_id) === String(selectedProjectId)), [tasks, selectedProjectId])
   const selectedProject = projects.find(project => String(project.id) === String(selectedProjectId)) || projects[0] || emptyProject
   const visibleTasks = useMemo(() => projectTasks.filter(task => {
@@ -148,9 +175,9 @@ function App() {
 
   const completed = projectTasks.filter(t => t.status === 'done').length
   const progress = Math.round((completed / Math.max(projectTasks.length, 1)) * 100)
-  const teamInitials = Array.from(new Set(projectTasks.map(task => task.assignee).filter(Boolean))).slice(0, 4)
+  const teamInitials = members.length ? members.slice(0, 4).map(member => member.username.slice(0, 2).toUpperCase()) : Array.from(new Set(projectTasks.map(task => task.assignee).filter(Boolean))).slice(0, 4)
   const nextTask = projectTasks.find(task => task.status !== 'done')
-  const accountName = user?.email?.split('@')[0] || 'Guest'
+  const accountName = profile?.username || user?.email?.split('@')[0] || 'Guest'
   const accountInitial = accountName.slice(0, 1).toUpperCase() || 'G'
 
   async function moveTask(id: number, status: Status) {
@@ -305,6 +332,12 @@ function App() {
     setNotice('Signed out. Local mode is active.')
   }
 
+  async function sendMessage(body: string) {
+    if (!user || !profile || !body.trim()) return
+    const { error } = await supabase.from('messages').insert({ body: body.trim(), sender_id: user.id, team_id: profile.team_id })
+    if (error) setNotice(error.message)
+  }
+
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark"><Sparkles size={16} /></div><span>Northstar</span></div>
@@ -315,7 +348,7 @@ function App() {
         <a className={`nav-item ${view === 'report' ? 'active' : ''}`} href="#report"><Presentation size={17} />Slides</a>
         <a className="nav-item" href="#board"><ListTodo size={17} />My work <span className="nav-count">{tasks.length}</span></a>
         <a className="nav-item" href="#"><Bell size={17} />Inbox</a>
-        <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
+        <a className={`nav-item ${view === 'messages' ? 'active' : ''}`} href="#messages"><MessageSquare size={17} />Messages</a>
       </nav>
       <div className="nav-heading"><span>Projects</span><button className="new-project-trigger" type="button" onClick={() => { setProjectError(''); setShowNewProject(true) }} aria-label="Create a new project"><Plus size={14} />New</button></div>
       <nav className="nav-group projects">
@@ -337,7 +370,7 @@ function App() {
       <div className="content">
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
-        {projects.length === 0 ? <section className="empty-workspace"><div className="empty-workspace-icon"><Sparkles size={24} /></div><span>START FRESH</span><h1>Create your first project</h1><p>Start with a blank project or ask Gemini to build the plan, tasks, and timeline from a short description.</p><div><button className="primary" onClick={() => { setProjectError(''); setShowNewProject(true) }}><Plus size={17} />Create project</button><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button></div></section> : <>
+        {view === 'messages' ? <MessagesView user={user} members={members} messages={messages} onSend={sendMessage} onSignIn={() => setShowAuth(true)} /> : projects.length === 0 ? <section className="empty-workspace"><div className="empty-workspace-icon"><Sparkles size={24} /></div><span>START FRESH</span><h1>Create your first project</h1><p>Start with a blank project or ask Gemini to build the plan, tasks, and timeline from a short description.</p><div><button className="primary" onClick={() => { setProjectError(''); setShowNewProject(true) }}><Plus size={17} />Create project</button><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button></div></section> : <>
         <div className="eyebrow"><span className={`project-dot ${selectedProject.color}`} />{selectedProject.name.toUpperCase()}</div>
         <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : view === 'report' ? 'Project slides' : 'Project overview'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : view === 'report' ? 'Choose the visuals that tell the clearest project story.' : 'Track progress, priorities, and delivery in one place.'}</p></div>{view !== 'report' && <div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>}</div>
 
@@ -423,6 +456,7 @@ function App() {
       </div>}
     </div></div>}
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}
+    {user && profile?.must_change_password && <PasswordChangeModal onChanged={() => { setProfile(current => current ? { ...current, must_change_password: false } : current); setNotice('Password updated. Welcome to Northstar.') }} />}
   </div>
 }
 
@@ -595,8 +629,31 @@ function PlanView({ project, tasks, progress, onOpenTask, onUpdateNotes }: { pro
   </section>
 }
 
+function MessagesView({ user, members, messages, onSend, onSignIn }: { user: User | null; members: Profile[]; messages: TeamMessage[]; onSend: (body: string) => Promise<void>; onSignIn: () => void }) {
+  const [draft, setDraft] = useState('')
+  const memberName = (id: string) => members.find(member => member.user_id === id)?.username || 'Team member'
+  async function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); await onSend(draft); setDraft('') }
+  if (!user) return <section className="empty-workspace"><div className="empty-workspace-icon"><MessageSquare size={24} /></div><span>TEAM CHAT</span><h1>Sign in to message your team</h1><p>Messages are private to members of your project team.</p><div><button className="primary" onClick={onSignIn}><LogIn size={17} />Sign in</button></div></section>
+  return <section className="messages-page"><header><div><span>TRANSFORMATION AND READINESS</span><h1>Team messages</h1><p>{members.length} members · shared team channel</p></div><div className="message-members">{members.map(member => <span title={member.username} key={member.user_id}>{member.username.slice(0, 2).toUpperCase()}</span>)}</div></header><div className="message-feed">{messages.length ? messages.map(message => <article className={message.sender_id === user.id ? 'mine' : ''} key={message.id}><div><b>{memberName(message.sender_id)}</b><time>{new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(message.created_at))}</time></div><p>{message.body}</p></article>) : <div className="messages-empty"><MessageSquare size={24} /><b>No messages yet</b><span>Start the conversation with your team.</span></div>}</div><form className="message-composer" onSubmit={submit}><input aria-label="Message" value={draft} onChange={event => setDraft(event.target.value)} maxLength={2000} placeholder="Write a message to the team…" /><button className="primary" disabled={!draft.trim()}><MessageSquare size={16} />Send</button></form></section>
+}
+
+function PasswordChangeModal({ onChanged }: { onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError('')
+    const form = new FormData(event.currentTarget); const password = String(form.get('password')); const confirmation = String(form.get('confirmation'))
+    if (password !== confirmation) { setError('Passwords do not match.'); setBusy(false); return }
+    if (password.toLowerCase() === 'rubberducky') { setError('Choose a password different from the temporary password.'); setBusy(false); return }
+    const result = await supabase.auth.updateUser({ password })
+    if (result.error) { setError(result.error.message); setBusy(false); return }
+    const { error: profileError } = await supabase.rpc('complete_first_login')
+    setBusy(false); if (profileError) setError(profileError.message); else onChanged()
+  }
+  return <div className="modal-backdrop force-password"><div className="modal auth-modal"><div className="modal-head"><div><span>FIRST LOGIN</span><h2>Create a new password</h2></div></div><p className="auth-copy">For security, replace the temporary password before continuing.</p><form onSubmit={submit}><label>New password<input name="password" type="password" minLength={10} required autoComplete="new-password" /></label><label>Confirm password<input name="confirmation" type="password" minLength={10} required autoComplete="new-password" /></label>{error && <div className="form-error">{error}</div>}<button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{busy ? 'Updating…' : 'Set new password'}</button></form></div></div>
+}
+
 function AuthModal({ onClose, onNotice }: { onClose: () => void; onNotice: (message: string) => void }) {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -605,29 +662,26 @@ function AuthModal({ onClose, onNotice }: { onClose: () => void; onNotice: (mess
     setBusy(true)
     setError('')
     const form = new FormData(event.currentTarget)
-    const email = String(form.get('email'))
+    const username = String(form.get('username')).trim().toLowerCase()
     const password = String(form.get('password'))
-    const result = mode === 'signin'
-      ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { emailRedirectTo: window.location.href.split('#')[0] } })
+    const result = await supabase.auth.signInWithPassword({ email: `${username}@northstar.local`, password })
     setBusy(false)
     if (result.error) setError(result.error.message)
     else {
-      onNotice(mode === 'signup' && !result.data.session ? 'Check your email to confirm your account.' : 'Cloud sync is now active.')
+      onNotice('Signed in successfully.')
       onClose()
     }
   }
 
   return <div className="modal-backdrop" onMouseDown={onClose}><div className="modal auth-modal" onMouseDown={e => e.stopPropagation()}>
-    <div className="modal-head"><div><span>SECURE CLOUD SYNC</span><h2>{mode === 'signin' ? 'Welcome back' : 'Create your account'}</h2></div><button onClick={onClose}><X size={20} /></button></div>
-    <p className="auth-copy">Your tasks are protected by Supabase authentication and row-level security.</p>
+    <div className="modal-head"><div><span>TRANSFORMATION AND READINESS</span><h2>Welcome back</h2></div><button onClick={onClose}><X size={20} /></button></div>
+    <p className="auth-copy">Sign in with your Northstar username. Usernames are not case-sensitive.</p>
     <form onSubmit={submit}>
-      <label>Email address<input name="email" type="email" required autoComplete="email" placeholder="you@example.com" /></label>
-      <label>Password<input name="password" type="password" minLength={6} required autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} placeholder="At least 6 characters" /></label>
+      <label>Username<input name="username" required autoComplete="username" placeholder="e.g. KCHALLIS" /></label>
+      <label>Password<input name="password" type="password" minLength={6} required autoComplete="current-password" placeholder="Your password" /></label>
       {error && <div className="form-error">{error}</div>}
-      <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <Cloud size={17} />}{busy ? 'Please wait…' : mode === 'signin' ? 'Sign in and sync' : 'Create account'}</button>
+      <button type="submit" className="primary auth-submit" disabled={busy}>{busy ? <LoaderCircle size={17} className="spin" /> : <LogIn size={17} />}{busy ? 'Please wait…' : 'Sign in'}</button>
     </form>
-    <button className="auth-switch" onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError('') }}>{mode === 'signin' ? 'New to Northstar? Create an account' : 'Already have an account? Sign in'}</button>
   </div></div>
 }
 
