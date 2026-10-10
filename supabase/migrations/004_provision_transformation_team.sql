@@ -17,7 +17,8 @@ where teams.name = 'Transformation and Readiness'
     'jpmcdermott@northstar.local',
     'asymonds@northstar.local',
     'lmetolli@northstar.local',
-    'rmeyers@northstar.local'
+    'rmeyers@northstar.local',
+    'mkearney@northstar.local'
   )
 on conflict (user_id) do update
 set username = excluded.username,
