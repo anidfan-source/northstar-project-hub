@@ -11,6 +11,11 @@ create table if not exists public.projects (
 
 alter table public.projects enable row level security;
 
+drop policy if exists "Users can view their own projects" on public.projects;
+drop policy if exists "Users can create their own projects" on public.projects;
+drop policy if exists "Users can update their own projects" on public.projects;
+drop policy if exists "Users can delete their own projects" on public.projects;
+
 create policy "Users can view their own projects" on public.projects for select using (auth.uid() = user_id);
 create policy "Users can create their own projects" on public.projects for insert with check (auth.uid() = user_id);
 create policy "Users can update their own projects" on public.projects for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
@@ -39,3 +44,5 @@ do $$ begin
   alter publication supabase_realtime add table public.projects;
 exception when duplicate_object then null;
 end $$;
+
+notify pgrst, 'reload schema';
