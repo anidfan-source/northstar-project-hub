@@ -1,9 +1,10 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { User } from '@supabase/supabase-js'
 import {
-  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, LayoutDashboard,
+  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Flag, LayoutDashboard,
   ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
-  Search, Settings, Sparkles, Users, X,
+  Search, Settings, Sparkles, Target, Users, X,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
@@ -11,6 +12,7 @@ type Status = 'backlog' | 'progress' | 'review' | 'done'
 type Priority = 'Low' | 'Medium' | 'High'
 type Task = { id: number; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
 type TaskInsert = Omit<Task, 'id'>
+type View = 'overview' | 'plan'
 
 const columns: { id: Status; label: string; tone: string }[] = [
   { id: 'backlog', label: 'Backlog', tone: 'slate' },
@@ -44,6 +46,13 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
   const [notice, setNotice] = useState('')
+  const [view, setView] = useState<View>(() => window.location.hash === '#plan' ? 'plan' : 'overview')
+
+  useEffect(() => {
+    const syncView = () => setView(window.location.hash === '#plan' ? 'plan' : 'overview')
+    window.addEventListener('hashchange', syncView)
+    return () => window.removeEventListener('hashchange', syncView)
+  }, [])
 
   useEffect(() => {
     if (!user) localStorage.setItem('northstar-tasks', JSON.stringify(tasks))
@@ -182,8 +191,9 @@ function App() {
       <div className="brand"><div className="brand-mark"><Sparkles size={16} /></div><span>Northstar</span></div>
       <button className="workspace-switcher"><span className="workspace-avatar">A</span><span><b>Acme Studio</b><small>Team workspace</small></span><ChevronDown size={15} /></button>
       <nav className="nav-group" aria-label="Main navigation">
-        <a className="nav-item active" href="#"><LayoutDashboard size={17} />Overview</a>
-        <a className="nav-item" href="#board"><ListTodo size={17} />My work <span className="nav-count">4</span></a>
+        <a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#"><LayoutDashboard size={17} />Overview</a>
+        <a className={`nav-item ${view === 'plan' ? 'active' : ''}`} href="#plan"><Target size={17} />Plan</a>
+        <a className="nav-item" href="#board"><ListTodo size={17} />My work <span className="nav-count">{tasks.length}</span></a>
         <a className="nav-item" href="#"><Bell size={17} />Inbox <span className="dot" /></a>
         <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
       </nav>
@@ -210,8 +220,9 @@ function App() {
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <div className="eyebrow"><span className="project-dot coral" />WEBSITE LAUNCH</div>
-        <div className="title-row"><div><h1>Good afternoon, Jordan</h1><p>Here’s what’s moving across your project today.</p></div><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>
+        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : 'Here’s what’s moving across your project today.'}</p></div><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>
 
+        {view === 'plan' ? <PlanView tasks={tasks} progress={progress} onOpenTask={setSelectedTask} /> : <>
         <section className="summary-grid">
           <article className="summary-card"><div className="summary-label"><span>Project progress</span><span className="trend">On track</span></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{completed} of {tasks.length} tasks completed</small></article>
           <article className="summary-card"><div className="summary-label"><span>Open tasks</span><ListTodo size={18} /></div><strong>{tasks.length - completed}</strong><small><b>{tasks.filter(t => t.priority === 'High' && t.status !== 'done').length} high priority</b> need attention</small></article>
@@ -239,6 +250,7 @@ function App() {
             })}
           </div>
         </section>
+        </>}
       </div>
     </main>
 
@@ -265,6 +277,48 @@ function App() {
     </div></div>}
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}
   </div>
+}
+
+function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: number; onOpenTask: (task: Task) => void }) {
+  const phases = [
+    { name: 'Discover', status: 'backlog' as Status, weeks: '1 / 4', range: 'Oct 5–9' },
+    { name: 'Design', status: 'progress' as Status, weeks: '2 / 4', range: 'Oct 10–16' },
+    { name: 'Validate', status: 'review' as Status, weeks: '3 / 4', range: 'Oct 17–21' },
+    { name: 'Launch', status: 'done' as Status, weeks: '4 / 4', range: 'Oct 22–23' },
+  ]
+  const statusCounts = columns.map(column => ({ ...column, count: tasks.filter(task => task.status === column.id).length }))
+  const highPriority = tasks.filter(task => task.priority === 'High' && task.status !== 'done')
+  const nextTask = tasks.find(task => task.status !== 'done')
+
+  return <section className="plan-page" aria-label="Project plan overview">
+    <div className="plan-kpis">
+      <article className="plan-progress-card"><div className="progress-ring" style={{ '--progress': `${progress * 3.6}deg` } as CSSProperties}><span>{progress}%</span></div><div><small>OVERALL PROGRESS</small><h2>Project is on track</h2><p>{tasks.filter(task => task.status === 'done').length} of {tasks.length} deliverables complete</p></div></article>
+      <article className="plan-stat"><Flag size={18} /><div><small>NEXT MILESTONE</small><strong>Design sign-off</strong><span>Friday, 16 October</span></div></article>
+      <article className="plan-stat"><Target size={18} /><div><small>FOCUS</small><strong>{highPriority.length} high-priority tasks</strong><span>{nextTask ? `Next: ${nextTask.title}` : 'Everything is complete'}</span></div></article>
+    </div>
+
+    <article className="roadmap-panel">
+      <div className="panel-heading"><div><span>ROADMAP</span><h2>Four-week delivery plan</h2></div><span className="date-range">5–23 October</span></div>
+      <div className="timeline-head"><span /><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div>
+      <div className="timeline-grid">
+        {phases.map((phase, index) => <div className="timeline-row" key={phase.name}>
+          <div className="phase-label"><span className={`status-dot ${columns[index].tone}`} /><div><strong>{phase.name}</strong><small>{phase.range}</small></div></div>
+          <div className="timeline-track"><span className={`phase-bar phase-${index + 1}`}>{phase.name}</span></div>
+        </div>)}
+      </div>
+      <div className="milestone-line"><span><Flag size={14} />Design sign-off</span><span><Flag size={14} />Go live</span></div>
+    </article>
+
+    <div className="plan-bottom-grid">
+      <article className="workload-panel"><div className="panel-heading"><div><span>WORK BREAKDOWN</span><h2>Tasks by stage</h2></div><b>{tasks.length} total</b></div>
+        <div className="stacked-progress" aria-label="Task distribution">{statusCounts.map(item => <span key={item.id} className={item.tone} style={{ width: `${(item.count / Math.max(tasks.length, 1)) * 100}%` }} />)}</div>
+        <div className="stage-list">{statusCounts.map(item => <div key={item.id}><span className={`status-dot ${item.tone}`} /><span>{item.label}</span><strong>{item.count}</strong></div>)}</div>
+      </article>
+      <article className="focus-panel"><div className="panel-heading"><div><span>PRIORITY QUEUE</span><h2>Needs attention</h2></div></div>
+        <div className="focus-list">{highPriority.length ? highPriority.slice(0, 3).map(task => <button key={task.id} onClick={() => onOpenTask(task)}><span className="avatar">{task.assignee}</span><span><strong>{task.title}</strong><small>{task.tag} · {task.due}</small></span><ChevronDown size={15} /></button>) : <p className="empty-state">No high-priority work is waiting.</p>}</div>
+      </article>
+    </div>
+  </section>
 }
 
 function AuthModal({ onClose, onNotice }: { onClose: () => void; onNotice: (message: string) => void }) {
