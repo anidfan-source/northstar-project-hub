@@ -4,9 +4,9 @@ import type { User } from '@supabase/supabase-js'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
-  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Flag, LayoutDashboard,
+  Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Download, Flag, Image, LayoutDashboard,
   ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
-  Search, Settings, SlidersHorizontal, Sparkles, Target, Users, WandSparkles, X,
+  Presentation, Search, Settings, SlidersHorizontal, Sparkles, Target, Users, WandSparkles, X,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
@@ -17,7 +17,7 @@ type Project = { id: ProjectId; name: string; color: string; description: string
 type GeneratedProject = { name: string; description: string; color: string; notes: string; phases: { name: string; startOffset: number; durationDays: number }[]; tasks: { title: string; description: string; phaseIndex: number; priority: Priority; assignee: string; tag: string }[] }
 type Task = { id: number; project_id?: ProjectId | null; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
 type TaskInsert = Omit<Task, 'id'>
-type View = 'overview' | 'plan'
+type View = 'overview' | 'plan' | 'report'
 
 const columns: { id: Status; label: string; tone: string }[] = [
   { id: 'backlog', label: 'Backlog', tone: 'slate' },
@@ -64,10 +64,10 @@ function App() {
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
   const [notice, setNotice] = useState('')
-  const [view, setView] = useState<View>(() => window.location.hash === '#plan' ? 'plan' : 'overview')
+  const [view, setView] = useState<View>(() => window.location.hash === '#plan' ? 'plan' : window.location.hash === '#report' ? 'report' : 'overview')
 
   useEffect(() => {
-    const syncView = () => setView(window.location.hash === '#plan' ? 'plan' : 'overview')
+    const syncView = () => setView(window.location.hash === '#plan' ? 'plan' : window.location.hash === '#report' ? 'report' : 'overview')
     window.addEventListener('hashchange', syncView)
     return () => window.removeEventListener('hashchange', syncView)
   }, [])
@@ -314,6 +314,7 @@ function App() {
       <nav className="nav-group" aria-label="Main navigation">
         <a className={`nav-item ${view === 'overview' ? 'active' : ''}`} href="#"><LayoutDashboard size={17} />Overview</a>
         <a className={`nav-item ${view === 'plan' ? 'active' : ''}`} href="#plan"><Target size={17} />Plan</a>
+        <a className={`nav-item ${view === 'report' ? 'active' : ''}`} href="#report"><Presentation size={17} />Slides</a>
         <a className="nav-item" href="#board"><ListTodo size={17} />My work <span className="nav-count">{tasks.length}</span></a>
         <a className="nav-item" href="#"><Bell size={17} />Inbox <span className="dot" /></a>
         <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
@@ -339,9 +340,9 @@ function App() {
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <div className="eyebrow"><span className={`project-dot ${selectedProject.color}`} />{selectedProject.name.toUpperCase()}</div>
-        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : 'Here’s what’s moving across your project today.'}</p></div><div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div></div>
+        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : view === 'report' ? 'Project slides' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : view === 'report' ? 'Choose the visuals that tell the clearest project story.' : 'Here’s what’s moving across your project today.'}</p></div>{view !== 'report' && <div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>}</div>
 
-        {view === 'plan' ? <PlanView key={selectedProject.id} project={selectedProject} tasks={projectTasks} progress={progress} onOpenTask={setSelectedTask} onUpdateNotes={updateProjectNotes} /> : <>
+        {view === 'report' ? <ReportStudio project={selectedProject} tasks={projectTasks} /> : view === 'plan' ? <PlanView key={selectedProject.id} project={selectedProject} tasks={projectTasks} progress={progress} onOpenTask={setSelectedTask} onUpdateNotes={updateProjectNotes} /> : <>
         <section className="summary-grid">
           <article className="summary-card"><div className="summary-label"><span>Project progress</span><span className="trend">On track</span></div><strong>{progress}%</strong><div className="progress-track"><span style={{ width: `${progress}%` }} /></div><small>{completed} of {projectTasks.length} tasks completed</small></article>
           <article className="summary-card"><div className="summary-label"><span>Open tasks</span><ListTodo size={18} /></div><strong>{projectTasks.length - completed}</strong><small><b>{projectTasks.filter(t => t.priority === 'High' && t.status !== 'done').length} high priority</b> need attention</small></article>
@@ -436,6 +437,67 @@ const initialPlan: PlanConfig = {
     { name: 'Validate', start: '2026-10-19', end: '2026-10-25' },
     { name: 'Launch', start: '2026-10-26', end: '2026-11-01' },
   ],
+}
+
+type ReportVisual = 'progress' | 'status' | 'priority' | 'timeline' | 'tasks'
+const reportOptions: { id: ReportVisual; label: string; description: string }[] = [
+  { id: 'progress', label: 'Progress', description: 'Completion and open work' },
+  { id: 'status', label: 'Task status', description: 'Work across board stages' },
+  { id: 'priority', label: 'Priorities', description: 'High, medium, and low tasks' },
+  { id: 'timeline', label: 'Timeline', description: 'Delivery phases and dates' },
+  { id: 'tasks', label: 'Task list', description: 'Detailed active work' },
+]
+
+function ReportStudio({ project, tasks }: { project: Project; tasks: Task[] }) {
+  const [selected, setSelected] = useState<ReportVisual[]>(['progress', 'status', 'priority', 'timeline'])
+  const [exporting, setExporting] = useState<'pptx' | 'png' | null>(null)
+  const slideRef = useRef<HTMLDivElement>(null)
+  const done = tasks.filter(task => task.status === 'done').length
+  const progress = Math.round(done / Math.max(tasks.length, 1) * 100)
+  const statuses = columns.map(column => ({ ...column, count: tasks.filter(task => task.status === column.id).length }))
+  const priorities = (['High', 'Medium', 'Low'] as Priority[]).map(priority => ({ priority, count: tasks.filter(task => task.priority === priority).length }))
+  const plan = JSON.parse(localStorage.getItem(`northstar-plan-${project.id}`) || JSON.stringify(initialPlan)) as PlanConfig
+
+  function toggleVisual(id: ReportVisual) { setSelected(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]) }
+  function safeName() { return project.name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'project' }
+
+  async function exportPptx() {
+    setExporting('pptx')
+    try {
+      const { default: PptxGenJS } = await import('pptxgenjs')
+      const pptx: any = new PptxGenJS()
+      pptx.layout = 'LAYOUT_WIDE'; pptx.author = 'Northstar'; pptx.subject = `${project.name} project report`; pptx.title = project.name
+      pptx.theme = { headFontFace: 'Aptos Display', bodyFontFace: 'Aptos', lang: 'en-GB' }
+      const ink = '172421', muted = '687570', coral = 'E76F51', green = '58A184', blue = '5E8FC5', amber = 'D79B45', bg = 'F7F8F5'
+      const addTitle = (slide: any, title: string, subtitle: string) => { slide.background = { color: bg }; slide.addText(title, { x: .7, y: .45, w: 8.8, h: .45, fontFace: 'Aptos Display', fontSize: 26, bold: true, color: ink, margin: 0 }); slide.addText(subtitle, { x: .7, y: .98, w: 9, h: .28, fontSize: 11, color: muted, margin: 0 }); slide.addText(project.name.toUpperCase(), { x: 10.7, y: .55, w: 1.9, h: .2, fontSize: 8, color: coral, bold: true, align: 'right', charSpacing: 1.5, margin: 0 }) }
+      const cover = pptx.addSlide(); cover.background = { color: ink }; cover.addText(project.name, { x: .8, y: 2.3, w: 8.8, h: .8, fontFace: 'Aptos Display', fontSize: 34, bold: true, color: 'FFFFFF', margin: 0 }); cover.addText(project.description || 'Project status report', { x: .82, y: 3.2, w: 7.5, h: .55, fontSize: 17, color: 'CAD2CF', margin: 0 }); cover.addText('NORTHSTAR PROJECT REPORT', { x: .82, y: 1.72, w: 4, h: .25, fontSize: 10, bold: true, color: 'F08A70', charSpacing: 1.8, margin: 0 }); cover.addText(new Intl.DateTimeFormat('en-GB', { dateStyle: 'long' }).format(new Date()), { x: .82, y: 6.75, w: 3.5, h: .25, fontSize: 10, color: '93A09C', margin: 0 })
+      if (selected.includes('progress')) { const slide = pptx.addSlide(); addTitle(slide, `${progress}% of tasks complete`, `${done} complete and ${tasks.length - done} still open`); slide.addChart(pptx.ChartType.doughnut, [{ name: 'Tasks', labels: ['Complete', 'Open'], values: [done, Math.max(tasks.length - done, 0)] }], { x: .8, y: 1.55, w: 5.2, h: 4.8, holeSize: 72, showLegend: false, showTitle: false, chartColors: [green, 'E5E9E4'], showValue: false, showPercent: false, border: { color: bg } }); slide.addText(`${progress}%`, { x: 2.25, y: 3.35, w: 2.3, h: .7, fontSize: 32, bold: true, color: ink, align: 'center', margin: 0 }); slide.addText('Current focus', { x: 7.1, y: 2.1, w: 4.5, h: .35, fontSize: 13, bold: true, color: coral, margin: 0 }); slide.addText(tasks.filter(task => task.status !== 'done').slice(0, 4).map(task => ({ text: task.title, options: { bullet: { indent: 16 }, breakLine: true } })), { x: 7.1, y: 2.65, w: 4.8, h: 2.7, fontSize: 18, color: ink, breakLine: true, paraSpaceAfterPt: 13, margin: 0 }) }
+      if (selected.includes('status')) { const slide = pptx.addSlide(); addTitle(slide, 'Tasks by delivery stage', `${tasks.length} tasks across the project board`); slide.addChart(pptx.ChartType.bar, [{ name: 'Tasks', labels: statuses.map(item => item.label), values: statuses.map(item => item.count) }], { x: 1, y: 1.55, w: 11.2, h: 4.9, barDir: 'bar', catAxisLabelFontSize: 15, valAxisLabelFontSize: 12, showLegend: false, showTitle: false, showValue: true, chartColors: [blue], showCatName: false, showValAxisTitle: false, showCatAxisTitle: false, valGridLine: { color: 'DDE2DC', width: 1 }, showBorder: false }) }
+      if (selected.includes('priority')) { const slide = pptx.addSlide(); addTitle(slide, 'Task priority', 'Current workload by urgency'); slide.addChart(pptx.ChartType.bar, [{ name: 'Tasks', labels: priorities.map(item => item.priority), values: priorities.map(item => item.count) }], { x: 1.15, y: 1.5, w: 10.9, h: 4.95, barDir: 'col', catAxisLabelFontSize: 16, valAxisLabelFontSize: 12, showLegend: false, showTitle: false, showValue: true, chartColors: [coral], valGridLine: { color: 'DDE2DC', width: 1 }, showBorder: false }) }
+      if (selected.includes('timeline')) { const slide = pptx.addSlide(); addTitle(slide, 'Delivery timeline', `${plan.start} to ${plan.end}`); const colors = ['DCE2DD', 'DCE9F5', 'F8EAD7', 'DCEEE7']; plan.phases.slice(0, 6).forEach((phase, index) => { const y = 1.7 + index * .78; const x = 3.25 + index * 1.45; slide.addText(phase.name, { x: .85, y, w: 2.2, h: .3, fontSize: 15, bold: true, color: ink, margin: 0 }); slide.addText(`${phase.start} to ${phase.end}`, { x: .85, y: y + .32, w: 2.2, h: .22, fontSize: 9, color: muted, margin: 0 }); slide.addShape(pptx.ShapeType.roundRect, { x, y: y + .08, w: 2.1, h: .42, rectRadius: .06, fill: { color: colors[index % colors.length] }, line: { color: colors[index % colors.length] } }); slide.addText(phase.name, { x: x + .15, y: y + .16, w: 1.8, h: .18, fontSize: 10, bold: true, color: ink, margin: 0 }) }) }
+      if (selected.includes('tasks')) { const slide = pptx.addSlide(); addTitle(slide, 'Active task list', 'Priority, owner, and due date'); const rows = [['Task', 'Status', 'Priority', 'Owner', 'Due'], ...tasks.slice(0, 12).map(task => [task.title, columns.find(column => column.id === task.status)?.label || task.status, task.priority, task.assignee, task.due])]; slide.addTable(rows, { x: .7, y: 1.45, w: 11.9, h: 5.4, border: { type: 'solid', color: 'DDE2DC', pt: 1 }, fill: 'FFFFFF', color: ink, fontSize: 12, margin: .08, rowH: .36, colW: [5.5, 1.8, 1.5, 1.1, 1.6], bold: false, autoFit: false, valign: 'mid' }); }
+      await pptx.writeFile({ fileName: `${safeName()}-report.pptx` })
+    } finally { setExporting(null) }
+  }
+
+  async function exportPng() {
+    if (!slideRef.current) return
+    setExporting('png')
+    try { const { toPng } = await import('html-to-image'); const url = await toPng(slideRef.current, { pixelRatio: 2.5, backgroundColor: '#f7f8f5' }); const link = document.createElement('a'); link.download = `${safeName()}-snapshot.png`; link.href = url; link.click() } finally { setExporting(null) }
+  }
+
+  return <section className="report-studio">
+    <aside className="visual-picker"><div><span>REPORT CONTENT</span><h2>Select visuals</h2><p>Choose what appears in the snapshot and PowerPoint.</p></div>{reportOptions.map(option => <label key={option.id} className={selected.includes(option.id) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(option.id)} onChange={() => toggleVisual(option.id)} /><span><b>{option.label}</b><small>{option.description}</small></span></label>)}<small className="selection-count">{selected.length} visual{selected.length === 1 ? '' : 's'} selected</small></aside>
+    <div className="report-canvas-wrap"><div className="report-actions"><span>16:9 presentation preview</span><div><button onClick={exportPng} disabled={!selected.length || !!exporting}><Image size={15} />{exporting === 'png' ? 'Exporting…' : 'Export PNG'}</button><button className="primary" onClick={exportPptx} disabled={!selected.length || !!exporting}><Download size={15} />{exporting === 'pptx' ? 'Building deck…' : 'Export PowerPoint'}</button></div></div>
+      <div className="slide-preview" ref={slideRef}><header><div><span>NORTHSTAR PROJECT REPORT</span><h2>{project.name}</h2><p>{project.description || 'Project status overview'}</p></div><b>{new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' }).format(new Date())}</b></header><div className={`slide-visuals count-${Math.min(selected.length, 5)}`}>
+        {selected.includes('progress') && <article className="slide-progress"><div className="mini-ring" style={{ '--progress': `${progress * 3.6}deg` } as CSSProperties}><span>{progress}%</span></div><div><small>PROGRESS</small><strong>{done} of {tasks.length} complete</strong><p>{tasks.length - done} tasks remain open</p></div></article>}
+        {selected.includes('status') && <article><small>TASK STATUS</small><div className="mini-bars">{statuses.map(item => <div key={item.id}><span>{item.label}</span><i><b className={item.tone} style={{ width: `${item.count / Math.max(tasks.length, 1) * 100}%` }} /></i><em>{item.count}</em></div>)}</div></article>}
+        {selected.includes('priority') && <article><small>PRIORITIES</small><div className="priority-columns">{priorities.map(item => <div key={item.priority}><b style={{ height: `${Math.max(12, item.count / Math.max(...priorities.map(p => p.count), 1) * 76)}%` }} /><span>{item.priority}</span><em>{item.count}</em></div>)}</div></article>}
+        {selected.includes('timeline') && <article className="slide-timeline"><small>TIMELINE</small>{plan.phases.slice(0, 4).map((phase, index) => <div key={phase.name}><span>{phase.name}</span><i className={`phase-${index + 1}`} /><em>{phase.end}</em></div>)}</article>}
+        {selected.includes('tasks') && <article className="slide-tasks"><small>ACTIVE TASKS</small>{tasks.filter(task => task.status !== 'done').slice(0, 5).map(task => <div key={task.id}><b>{task.title}</b><span>{task.priority} · {task.assignee} · {task.due}</span></div>)}</article>}
+      </div><footer><span>{tasks.length} tasks</span><span>{tasks.filter(task => task.priority === 'High' && task.status !== 'done').length} high priority</span><span>{plan.phases.length} phases</span></footer></div>
+    </div>
+  </section>
 }
 
 function PlanView({ project, tasks, progress, onOpenTask, onUpdateNotes }: { project: Project; tasks: Task[]; progress: number; onOpenTask: (task: Task) => void; onUpdateNotes: (notes: string) => void }) {

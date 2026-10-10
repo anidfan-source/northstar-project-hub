@@ -11,6 +11,8 @@ A focused project-management MVP built with React, TypeScript, and Vite.
 - Multiple projects with project-specific tasks, plans, creation, and removal
 - Markdown project canvas with formatting controls and live preview
 - Gemini-powered AI Project Builder for generating phases, tasks, timelines, and briefs from a plain-language idea
+- Slide studio with selectable progress, status, priority, timeline, and task-list visuals
+- One-click export to editable PowerPoint (`.pptx`) or a high-resolution PNG snapshot
 - Searchable, filterable Kanban board
 - Drag-and-drop task status changes
 - Task creation and deletion
