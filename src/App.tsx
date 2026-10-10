@@ -4,7 +4,7 @@ import type { User } from '@supabase/supabase-js'
 import {
   Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Flag, LayoutDashboard,
   ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
-  Search, Settings, Sparkles, Target, Users, X,
+  Search, Settings, SlidersHorizontal, Sparkles, Target, Users, X,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
@@ -279,16 +279,55 @@ function App() {
   </div>
 }
 
+type Horizon = '4w' | '8w' | '6m' | '1y' | 'custom'
+type PlanPhase = { name: string; start: string; end: string }
+type PlanConfig = { horizon: Horizon; start: string; end: string; phases: PlanPhase[] }
+
+const initialPlan: PlanConfig = {
+  horizon: '4w', start: '2026-10-05', end: '2026-11-01', phases: [
+    { name: 'Discover', start: '2026-10-05', end: '2026-10-09' },
+    { name: 'Design', start: '2026-10-10', end: '2026-10-18' },
+    { name: 'Validate', start: '2026-10-19', end: '2026-10-25' },
+    { name: 'Launch', start: '2026-10-26', end: '2026-11-01' },
+  ],
+}
+
 function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: number; onOpenTask: (task: Task) => void }) {
-  const phases = [
-    { name: 'Discover', status: 'backlog' as Status, weeks: '1 / 4', range: 'Oct 5–9' },
-    { name: 'Design', status: 'progress' as Status, weeks: '2 / 4', range: 'Oct 10–16' },
-    { name: 'Validate', status: 'review' as Status, weeks: '3 / 4', range: 'Oct 17–21' },
-    { name: 'Launch', status: 'done' as Status, weeks: '4 / 4', range: 'Oct 22–23' },
-  ]
+  const [plan, setPlan] = useState<PlanConfig>(() => {
+    const saved = localStorage.getItem('northstar-plan')
+    return saved ? JSON.parse(saved) : initialPlan
+  })
+  const [draft, setDraft] = useState<PlanConfig>(plan)
+  const [editing, setEditing] = useState(false)
   const statusCounts = columns.map(column => ({ ...column, count: tasks.filter(task => task.status === column.id).length }))
   const highPriority = tasks.filter(task => task.priority === 'High' && task.status !== 'done')
   const nextTask = tasks.find(task => task.status !== 'done')
+  const day = 86400000
+  const startMs = new Date(`${plan.start}T00:00:00Z`).getTime()
+  const endMs = new Date(`${plan.end}T00:00:00Z`).getTime()
+  const totalMs = Math.max(endMs - startMs, day)
+  const dateFormatter = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: plan.horizon === '1y' ? '2-digit' : undefined, timeZone: 'UTC' })
+  const formatDate = (value: string | number) => dateFormatter.format(typeof value === 'number' ? new Date(value) : new Date(`${value}T00:00:00Z`))
+  const axisLabels = Array.from({ length: 5 }, (_, index) => formatDate(startMs + (totalMs * index / 4)))
+
+  function setHorizon(horizon: Horizon) {
+    if (horizon === 'custom') { setDraft({ ...plan, horizon }); setEditing(true); return }
+    const days = horizon === '4w' ? 27 : horizon === '8w' ? 55 : horizon === '6m' ? 182 : 364
+    const newEnd = new Date(startMs + days * day).toISOString().slice(0, 10)
+    const next = { ...plan, horizon, end: newEnd }
+    setPlan(next)
+    localStorage.setItem('northstar-plan', JSON.stringify(next))
+  }
+
+  function savePlan(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (new Date(draft.end) <= new Date(draft.start)) return
+    setPlan(draft)
+    localStorage.setItem('northstar-plan', JSON.stringify(draft))
+    setEditing(false)
+  }
+
+  function editPlan() { setDraft(plan); setEditing(true) }
 
   return <section className="plan-page" aria-label="Project plan overview">
     <div className="plan-kpis">
@@ -298,12 +337,13 @@ function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: nu
     </div>
 
     <article className="roadmap-panel">
-      <div className="panel-heading"><div><span>ROADMAP</span><h2>Four-week delivery plan</h2></div><span className="date-range">5–23 October</span></div>
-      <div className="timeline-head"><span /><span>Week 1</span><span>Week 2</span><span>Week 3</span><span>Week 4</span></div>
+      <div className="panel-heading roadmap-heading"><div><span>ROADMAP</span><h2>Delivery timeline</h2></div><div className="roadmap-actions"><div className="horizon-picker" aria-label="Timeline range">{([['4w','4 weeks'],['8w','8 weeks'],['6m','6 months'],['1y','1 year']] as [Horizon,string][]).map(([value,label]) => <button key={value} className={plan.horizon === value ? 'active' : ''} onClick={() => setHorizon(value)}>{label}</button>)}<button className={plan.horizon === 'custom' ? 'active' : ''} onClick={() => setHorizon('custom')}>Custom</button></div><button className="edit-plan" onClick={editPlan}><SlidersHorizontal size={14} />Edit plan</button></div></div>
+      <div className="timeline-summary"><span>{formatDate(plan.start)} — {formatDate(plan.end)}</span><small>{Math.ceil(totalMs / day)} days</small></div>
+      <div className="timeline-head"><span />{axisLabels.map(label => <span key={label}>{label}</span>)}</div>
       <div className="timeline-grid">
-        {phases.map((phase, index) => <div className="timeline-row" key={phase.name}>
-          <div className="phase-label"><span className={`status-dot ${columns[index].tone}`} /><div><strong>{phase.name}</strong><small>{phase.range}</small></div></div>
-          <div className="timeline-track"><span className={`phase-bar phase-${index + 1}`}>{phase.name}</span></div>
+        {plan.phases.map((phase, index) => <div className="timeline-row" key={`${phase.name}-${index}`}>
+          <div className="phase-label"><span className={`status-dot ${columns[index % columns.length].tone}`} /><div><strong>{phase.name}</strong><small>{formatDate(phase.start)}–{formatDate(phase.end)}</small></div></div>
+          <div className="timeline-track"><span className={`phase-bar phase-${index % 4 + 1}`} style={{ left: `${Math.max(0, Math.min(100, ((new Date(`${phase.start}T00:00:00Z`).getTime() - startMs) / totalMs) * 100))}%`, width: `${Math.max(2, Math.min(100, ((new Date(`${phase.end}T00:00:00Z`).getTime() - new Date(`${phase.start}T00:00:00Z`).getTime()) / totalMs) * 100))}%` }}>{phase.name}</span></div>
         </div>)}
       </div>
       <div className="milestone-line"><span><Flag size={14} />Design sign-off</span><span><Flag size={14} />Go live</span></div>
@@ -318,6 +358,14 @@ function PlanView({ tasks, progress, onOpenTask }: { tasks: Task[]; progress: nu
         <div className="focus-list">{highPriority.length ? highPriority.slice(0, 3).map(task => <button key={task.id} onClick={() => onOpenTask(task)}><span className="avatar">{task.assignee}</span><span><strong>{task.title}</strong><small>{task.tag} · {task.due}</small></span><ChevronDown size={15} /></button>) : <p className="empty-state">No high-priority work is waiting.</p>}</div>
       </article>
     </div>
+    {editing && <div className="modal-backdrop" onMouseDown={() => setEditing(false)}><div className="modal plan-editor" onMouseDown={event => event.stopPropagation()}>
+      <div className="modal-head"><div><span>PLAN SETTINGS</span><h2>Edit timeline</h2></div><button onClick={() => setEditing(false)}><X size={20} /></button></div>
+      <form onSubmit={savePlan}>
+        <div className="form-grid"><label>Plan starts<input type="date" value={draft.start} onChange={event => setDraft(current => ({ ...current, start: event.target.value, horizon: 'custom' }))} /></label><label>Plan ends<input type="date" value={draft.end} min={draft.start} onChange={event => setDraft(current => ({ ...current, end: event.target.value, horizon: 'custom' }))} /></label></div>
+        <div className="phase-editor"><div className="phase-editor-head"><strong>Project phases</strong><span>Name and schedule</span></div>{draft.phases.map((phase, index) => <div className="phase-editor-row" key={index}><span className={`status-dot ${columns[index % columns.length].tone}`} /><input aria-label={`Phase ${index + 1} name`} value={phase.name} onChange={event => setDraft(current => ({ ...current, phases: current.phases.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item) }))} /><input aria-label={`${phase.name} start`} type="date" value={phase.start} onChange={event => setDraft(current => ({ ...current, phases: current.phases.map((item, itemIndex) => itemIndex === index ? { ...item, start: event.target.value } : item) }))} /><input aria-label={`${phase.name} end`} type="date" value={phase.end} onChange={event => setDraft(current => ({ ...current, phases: current.phases.map((item, itemIndex) => itemIndex === index ? { ...item, end: event.target.value } : item) }))} /></div>)}</div>
+        <div className="modal-actions"><button type="button" className="cancel" onClick={() => setEditing(false)}>Cancel</button><button type="submit" className="primary"><Check size={17} />Apply timeline</button></div>
+      </form>
+    </div></div>}
   </section>
 }
 

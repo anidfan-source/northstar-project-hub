@@ -6,6 +6,8 @@ A focused project-management MVP built with React, TypeScript, and Vite.
 
 - Project overview and progress metrics
 - Visual “Plan on a page” roadmap with milestones, phases, workload, and priority focus
+- Editable 4-week, 8-week, 6-month, 1-year, and custom timeline ranges
+- Editable project phase names and dates with saved browser preferences
 - Searchable, filterable Kanban board
 - Drag-and-drop task status changes
 - Task creation and deletion
