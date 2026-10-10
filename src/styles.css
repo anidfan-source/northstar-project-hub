@@ -76,6 +76,8 @@ h1,h2,h3,p { margin-top: 0; }.title-row h1 { font: 700 29px Manrope, sans-serif;
 .split-actions { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; }
 .text-button { border: 0; background: transparent; color: #d2644c; padding: 9px 0; font-size: 12px; font-weight: 600; }
 .nav-heading button { border: 0; background: transparent; color: #84908c; padding: 3px; display: grid; place-items: center; }
+.nav-heading .new-project-trigger { display: flex; align-items: center; gap: 3px; color: #c5cfcb; font-size: 9px; font-weight: 700; padding: 5px 7px; border-radius: 6px; }
+.nav-heading .new-project-trigger:hover { color: #fff; background: rgba(255,255,255,.08); }
 .project-nav-row { display: grid; grid-template-columns: 1fr auto; align-items: center; border-radius: 7px; }
 .project-nav-row.selected { background: rgba(255,255,255,.075); }
 .project-select { border: 0; background: transparent; color: #aeb9b5; display: flex; align-items: center; gap: 10px; padding: 9px 11px; text-align: left; min-width: 0; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

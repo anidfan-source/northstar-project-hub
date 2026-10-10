@@ -54,6 +54,7 @@ function App() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showAuth, setShowAuth] = useState(false)
   const [showNewProject, setShowNewProject] = useState(false)
+  const [projectError, setProjectError] = useState('')
   const [dragged, setDragged] = useState<number | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
@@ -222,11 +223,12 @@ function App() {
 
   async function addProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    setProjectError('')
     const form = new FormData(event.currentTarget)
     const project = { name: String(form.get('name')), description: String(form.get('description') || ''), color: String(form.get('color') || 'violet'), notes: '' }
     if (user) {
       const { data, error } = await supabase.from('projects').insert({ ...project, user_id: user.id }).select().single()
-      if (error) { setNotice(error.message); return }
+      if (error) { setProjectError(error.message); return }
       setProjects(current => [...current, data as Project])
       setSelectedProjectId(data.id)
     } else {
@@ -235,6 +237,7 @@ function App() {
       setSelectedProjectId(localProject.id)
     }
     setShowNewProject(false)
+    setNotice(`Project “${project.name}” created.`)
     window.location.hash = '#plan'
   }
 
@@ -276,7 +279,7 @@ function App() {
         <a className="nav-item" href="#"><Bell size={17} />Inbox <span className="dot" /></a>
         <a className="nav-item" href="#"><MessageSquare size={17} />Messages</a>
       </nav>
-      <div className="nav-heading"><span>Projects</span><button onClick={() => setShowNewProject(true)} aria-label="Add project"><Plus size={15} /></button></div>
+      <div className="nav-heading"><span>Projects</span><button className="new-project-trigger" type="button" onClick={() => { setProjectError(''); setShowNewProject(true) }} aria-label="Create a new project"><Plus size={14} />New</button></div>
       <nav className="nav-group projects">
         {projects.map(project => <div className={`project-nav-row ${String(project.id) === String(selectedProjectId) ? 'selected' : ''}`} key={project.id}><button className="project-select" onClick={() => { setSelectedProjectId(project.id); window.location.hash = '#plan' }}><span className={`project-dot ${project.color}`} />{project.name}</button><button className="project-remove" onClick={() => removeProject(project)} aria-label={`Remove ${project.name}`}><X size={13} /></button></div>)}
       </nav>
@@ -358,6 +361,7 @@ function App() {
         <label>Project name<input name="name" required autoFocus maxLength={80} placeholder="e.g. Customer portal" /></label>
         <label>Description<textarea name="description" rows={3} placeholder="What outcome will this project deliver?" /></label>
         <label>Colour<select name="color"><option value="violet">Violet</option><option value="coral">Coral</option><option value="mint">Mint</option></select></label>
+        {projectError && <div className="form-error" role="alert">{projectError}</div>}
         <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNewProject(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create project</button></div>
       </form>
     </div></div>}
