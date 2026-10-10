@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import {
   Bell, CalendarDays, Check, ChevronDown, CircleHelp, Clock3, Cloud, Flag, LayoutDashboard,
   ListTodo, LoaderCircle, LogIn, LogOut, MessageSquare, MoreHorizontal, Plus,
-  Search, Settings, SlidersHorizontal, Sparkles, Target, Users, X,
+  Search, Settings, SlidersHorizontal, Sparkles, Target, Users, WandSparkles, X,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
@@ -14,6 +14,7 @@ type Status = 'backlog' | 'progress' | 'review' | 'done'
 type Priority = 'Low' | 'Medium' | 'High'
 type ProjectId = number | string
 type Project = { id: ProjectId; name: string; color: string; description: string; notes: string }
+type GeneratedProject = { name: string; description: string; color: string; notes: string; phases: { name: string; startOffset: number; durationDays: number }[]; tasks: { title: string; description: string; phaseIndex: number; priority: Priority; assignee: string; tag: string }[] }
 type Task = { id: number; project_id?: ProjectId | null; title: string; description: string; status: Status; priority: Priority; due: string; assignee: string; tag: string }
 type TaskInsert = Omit<Task, 'id'>
 type View = 'overview' | 'plan'
@@ -55,6 +56,10 @@ function App() {
   const [showAuth, setShowAuth] = useState(false)
   const [showNewProject, setShowNewProject] = useState(false)
   const [projectError, setProjectError] = useState('')
+  const [showAiBuilder, setShowAiBuilder] = useState(false)
+  const [aiDraft, setAiDraft] = useState<GeneratedProject | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiError, setAiError] = useState('')
   const [dragged, setDragged] = useState<number | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [syncing, setSyncing] = useState(true)
@@ -241,6 +246,40 @@ function App() {
     window.location.hash = '#plan'
   }
 
+  async function generateProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!user) { setAiError('Sign in first so your generated project can be saved securely.'); return }
+    setAiBusy(true); setAiError(''); setAiDraft(null)
+    const form = new FormData(event.currentTarget)
+    const { data, error } = await supabase.functions.invoke('generate-project', { body: { prompt: String(form.get('prompt')), horizon: String(form.get('horizon')) } })
+    setAiBusy(false)
+    if (error) { setAiError(error.message); return }
+    if (data?.error) { setAiError(data.error); return }
+    setAiDraft(data as GeneratedProject)
+  }
+
+  async function createAiProject() {
+    if (!user || !aiDraft) return
+    setAiBusy(true); setAiError('')
+    const { data: created, error } = await supabase.from('projects').insert({ user_id: user.id, name: aiDraft.name, description: aiDraft.description, color: aiDraft.color || 'violet', notes: aiDraft.notes }).select().single()
+    if (error) { setAiBusy(false); setAiError(error.message); return }
+    const today = new Date(); today.setHours(12, 0, 0, 0)
+    const dateAt = (offset: number) => { const date = new Date(today); date.setDate(date.getDate() + offset); return date }
+    const dueLabel = (date: Date) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(date)
+    const generatedTasks = aiDraft.tasks.map((task, index) => ({ project_id: created.id, user_id: user.id, sort_order: index, title: task.title, description: task.description, status: 'backlog' as Status, priority: task.priority, due: dueLabel(dateAt(aiDraft.phases[task.phaseIndex]?.startOffset || 0)), assignee: task.assignee || 'JD', tag: task.tag || 'General' }))
+    const inserted = await supabase.from('tasks').insert(generatedTasks).select()
+    if (inserted.error) { await supabase.from('projects').delete().eq('id', created.id); setAiBusy(false); setAiError(inserted.error.message); return }
+    const lastPhase = aiDraft.phases[aiDraft.phases.length - 1]
+    const planConfig: PlanConfig = { horizon: 'custom', start: dateAt(0).toISOString().slice(0, 10), end: dateAt((lastPhase?.startOffset || 0) + (lastPhase?.durationDays || 28)).toISOString().slice(0, 10), phases: aiDraft.phases.map(phase => ({ name: phase.name, start: dateAt(phase.startOffset).toISOString().slice(0, 10), end: dateAt(phase.startOffset + phase.durationDays).toISOString().slice(0, 10) })) }
+    localStorage.setItem(`northstar-plan-${created.id}`, JSON.stringify(planConfig))
+    setProjects(current => [...current, created as Project])
+    setTasks(current => [...current, ...((inserted.data || []) as Task[])])
+    setSelectedProjectId(created.id)
+    setAiBusy(false); setShowAiBuilder(false); setAiDraft(null)
+    setNotice(`AI project “${created.name}” created with ${generatedTasks.length} tasks.`)
+    window.location.hash = '#plan'
+  }
+
   async function removeProject(project: Project) {
     if (projects.length === 1) { setNotice('Create another project before removing this one.'); return }
     if (!window.confirm(`Remove “${project.name}” and all of its tasks?`)) return
@@ -300,7 +339,7 @@ function App() {
         {!user && <div className="cloud-banner"><div><Cloud size={17} /><span><b>Your work is saved on this device.</b> Sign in to sync tasks securely across devices.</span></div><button onClick={() => setShowAuth(true)}>Enable cloud sync</button></div>}
         {notice && <div className="notice"><span>{notice}</span><button onClick={() => setNotice('')}><X size={15} /></button></div>}
         <div className="eyebrow"><span className={`project-dot ${selectedProject.color}`} />{selectedProject.name.toUpperCase()}</div>
-        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : 'Here’s what’s moving across your project today.'}</p></div><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div>
+        <div className="title-row"><div><h1>{view === 'plan' ? 'Plan on a page' : 'Good afternoon, Jordan'}</h1><p>{view === 'plan' ? 'The whole project—from discovery to launch—in one visual view.' : 'Here’s what’s moving across your project today.'}</p></div><div className="title-actions"><button className="ai-button" onClick={() => { setAiDraft(null); setAiError(''); setShowAiBuilder(true) }}><WandSparkles size={17} />Build with AI</button><button className="primary" onClick={() => setShowNew(true)}><Plus size={17} />New task</button></div></div>
 
         {view === 'plan' ? <PlanView key={selectedProject.id} project={selectedProject} tasks={projectTasks} progress={progress} onOpenTask={setSelectedTask} onUpdateNotes={updateProjectNotes} /> : <>
         <section className="summary-grid">
@@ -364,6 +403,23 @@ function App() {
         {projectError && <div className="form-error" role="alert">{projectError}</div>}
         <div className="modal-actions"><button type="button" className="cancel" onClick={() => setShowNewProject(false)}>Cancel</button><button type="submit" className="primary"><Plus size={17} />Create project</button></div>
       </form>
+    </div></div>}
+    {showAiBuilder && <div className="modal-backdrop" onMouseDown={() => !aiBusy && setShowAiBuilder(false)}><div className="modal ai-builder" onMouseDown={event => event.stopPropagation()}>
+      <div className="modal-head"><div><span>AI PROJECT BUILDER</span><h2>Turn an idea into a project</h2></div><button disabled={aiBusy} onClick={() => setShowAiBuilder(false)}><X size={20} /></button></div>
+      {!aiDraft ? <form onSubmit={generateProject}>
+        <p className="auth-copy">Describe the outcome, audience, constraints, and anything that must be included. Gemini will draft the project plan for your review.</p>
+        <label>What are you planning?<textarea name="prompt" required minLength={15} rows={6} autoFocus placeholder="Example: Build a national outage viewer showing disruptive works and severe weather. Include data discovery, interactive mapping, alerting, accessibility testing, and launch." /></label>
+        <label>Planning horizon<select name="horizon" defaultValue="8 weeks"><option>4 weeks</option><option>8 weeks</option><option>6 months</option><option>1 year</option></select></label>
+        {aiError && <div className="form-error" role="alert">{aiError}</div>}
+        {!user && <button type="button" className="auth-switch ai-signin" onClick={() => { setShowAiBuilder(false); setShowAuth(true) }}>Sign in to enable AI generation</button>}
+        <div className="modal-actions"><button type="button" className="cancel" disabled={aiBusy} onClick={() => setShowAiBuilder(false)}>Cancel</button><button type="submit" className="primary" disabled={aiBusy || !user}>{aiBusy ? <LoaderCircle size={17} className="spin" /> : <WandSparkles size={17} />}{aiBusy ? 'Building your plan…' : 'Generate project'}</button></div>
+      </form> : <div className="ai-preview">
+        <div className="ai-preview-hero"><span className={`project-dot ${aiDraft.color}`} /><div><small>GENERATED DRAFT</small><h3>{aiDraft.name}</h3><p>{aiDraft.description}</p></div></div>
+        <div className="ai-preview-stats"><span><b>{aiDraft.phases.length}</b> phases</span><span><b>{aiDraft.tasks.length}</b> tasks</span><span><b>{aiDraft.tasks.filter(task => task.priority === 'High').length}</b> high priority</span></div>
+        <div className="ai-phase-preview">{aiDraft.phases.map((phase, index) => <div key={phase.name}><span>{index + 1}</span><b>{phase.name}</b><small>{phase.durationDays} days</small></div>)}</div>
+        {aiError && <div className="form-error" role="alert">{aiError}</div>}
+        <div className="modal-actions"><button type="button" className="cancel" onClick={() => setAiDraft(null)}>Start again</button><button type="button" className="primary" disabled={aiBusy} onClick={createAiProject}>{aiBusy ? <LoaderCircle size={17} className="spin" /> : <Check size={17} />}{aiBusy ? 'Creating…' : 'Create this project'}</button></div>
+      </div>}
     </div></div>}
     {showAuth && <AuthModal onClose={() => setShowAuth(false)} onNotice={setNotice} />}
   </div>
