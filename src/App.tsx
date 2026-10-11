@@ -1032,6 +1032,19 @@ function App() {
             </button>
             <button
               type="button"
+              className="project-context-action ai"
+              onClick={() => {
+                setAiDraft(null);
+                setAiError("");
+                setShowAiBuilder(true);
+              }}
+              aria-label="Build a project with AI"
+              title="Build with AI"
+            >
+              <WandSparkles size={15} />
+            </button>
+            <button
+              type="button"
               className="project-context-action remove"
               onClick={() => selectedProject && removeProject(selectedProject)}
               aria-label={selectedProject ? `Remove ${selectedProject.name}` : "Remove project"}

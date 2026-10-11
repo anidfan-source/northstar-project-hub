@@ -15,11 +15,13 @@ button { cursor: pointer; }
 .workspace-identity small, .profile small { display: block; font-size: 10px; color: #967b81; margin-top: 3px; }
 .project-context { padding: 0 9px 4px; }
 .project-context label { display: block; margin-bottom: 7px; color: #a17d84; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
-.project-context-controls { display: grid; grid-template-columns: minmax(0,1fr) 32px 32px; gap: 6px; }
+.project-context-controls { display: grid; grid-template-columns: minmax(0,1fr) 32px 32px 32px; gap: 6px; }
 .project-context select { min-width: 0; width: 100%; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #503b40; padding: 8px 28px 8px 9px; font-size: 10px; font-weight: 600; outline: none; text-overflow: ellipsis; }
 .project-context select:focus { border-color: #b5152b; box-shadow: 0 0 0 3px rgba(181,21,43,.1); }
 .project-context-action { width: 32px; height: 32px; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #9a1a30; display: grid; place-items: center; padding: 0; }
 .project-context-action:hover { background: #f8dce0; border-color: #ddb8be; }
+.project-context-action.ai { color: #6f4b91; background: #fbf7ff; border-color: #dfd3e9; }
+.project-context-action.ai:hover { background: #f0e7f8; border-color: #cdb9dc; }
 .project-context-action.remove { color: #8e6870; }
 .project-context-action:disabled { opacity: .4; cursor: not-allowed; }
 .profile b { display: block; font-size: 12px; }
