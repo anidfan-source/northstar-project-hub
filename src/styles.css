@@ -13,6 +13,15 @@ button { cursor: pointer; }
 .workspace-identity .brand-wordmark { display: block; width: 126px; height: auto; }
 .workspace-identity span { display: block; color: #38272b; font: 700 13px Manrope, sans-serif; line-height: 1.35; }
 .workspace-identity small, .profile small { display: block; font-size: 10px; color: #967b81; margin-top: 3px; }
+.project-context { padding: 0 9px 4px; }
+.project-context label { display: block; margin-bottom: 7px; color: #a17d84; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.project-context-controls { display: grid; grid-template-columns: minmax(0,1fr) 32px 32px; gap: 6px; }
+.project-context select { min-width: 0; width: 100%; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #503b40; padding: 8px 28px 8px 9px; font-size: 10px; font-weight: 600; outline: none; text-overflow: ellipsis; }
+.project-context select:focus { border-color: #b5152b; box-shadow: 0 0 0 3px rgba(181,21,43,.1); }
+.project-context-action { width: 32px; height: 32px; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #9a1a30; display: grid; place-items: center; padding: 0; }
+.project-context-action:hover { background: #f8dce0; border-color: #ddb8be; }
+.project-context-action.remove { color: #8e6870; }
+.project-context-action:disabled { opacity: .4; cursor: not-allowed; }
 .profile b { display: block; font-size: 12px; }
 .nav-group { display: grid; gap: 3px; }
 .nav-item { position: relative; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #684f55; padding: 9px 11px; border-radius: 9px; font-size: 12px; font-weight: 600; transition: color .16s ease, background .16s ease, transform .16s ease; }
@@ -252,6 +261,7 @@ body { background: linear-gradient(135deg, #fff 0%, #fff9f9 48%, #fff2f3 100%); 
   .workspace-identity .brand-symbol { width: 36px; height: 25px; }
   .workspace-identity .brand-wordmark { width: 112px; }
   .sidebar .nav-section-label, .sidebar .nav-heading, .sidebar .projects, .sidebar-bottom { display: none; }
+  .project-context { padding: 4px 4px 8px; }
   .sidebar > .nav-group:not(.projects) { display: flex; gap: 5px; overflow-x: auto; padding: 3px 0; scrollbar-width: none; }
   .sidebar > .nav-group:not(.projects)::-webkit-scrollbar { display: none; }
   .nav-item { white-space: nowrap; flex: 0 0 auto; padding: 8px 10px; }

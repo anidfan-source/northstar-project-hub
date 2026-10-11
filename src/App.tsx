@@ -999,6 +999,49 @@ function App() {
             <small>Project workspace</small>
           </div>
         </div>
+        <div className="project-context">
+          <label htmlFor="current-project">Current project</label>
+          <div className="project-context-controls">
+            <select
+              id="current-project"
+              value={String(selectedProjectId ?? "")}
+              onChange={(event) => {
+                setSelectedProjectId(event.target.value);
+                window.location.hash = "#plan";
+              }}
+              disabled={projects.length === 0}
+            >
+              {projects.length === 0 && <option value="">No projects yet</option>}
+              {projects.map((project) => (
+                <option key={project.id} value={String(project.id)}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="project-context-action"
+              onClick={() => {
+                setProjectError("");
+                setShowNewProject(true);
+              }}
+              aria-label="Create a new project"
+              title="Create a new project"
+            >
+              <Plus size={15} />
+            </button>
+            <button
+              type="button"
+              className="project-context-action remove"
+              onClick={() => selectedProject && removeProject(selectedProject)}
+              aria-label={selectedProject ? `Remove ${selectedProject.name}` : "Remove project"}
+              title="Remove current project"
+              disabled={!selectedProject}
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
         <div className="nav-section-label">Workspace</div>
         <nav className="nav-group" aria-label="Main navigation">
           <a
@@ -1056,47 +1099,6 @@ function App() {
             <History size={17} />
             Activity
           </a>
-        </nav>
-        <div className="nav-heading">
-          <span>Projects</span>
-          <button
-            className="new-project-trigger"
-            type="button"
-            onClick={() => {
-              setProjectError("");
-              setShowNewProject(true);
-            }}
-            aria-label="Create a new project"
-          >
-            <Plus size={14} />
-            New
-          </button>
-        </div>
-        <nav className="nav-group projects">
-          {projects.map((project) => (
-            <div
-              className={`project-nav-row ${String(project.id) === String(selectedProjectId) ? "selected" : ""}`}
-              key={project.id}
-            >
-              <button
-                className="project-select"
-                onClick={() => {
-                  setSelectedProjectId(project.id);
-                  window.location.hash = "#plan";
-                }}
-              >
-                <span className={`project-dot ${project.color}`} />
-                {project.name}
-              </button>
-              <button
-                className="project-remove"
-                onClick={() => removeProject(project)}
-                aria-label={`Remove ${project.name}`}
-              >
-                <X size={13} />
-              </button>
-            </div>
-          ))}
         </nav>
         <div className="sidebar-bottom">
           <div className="profile">
