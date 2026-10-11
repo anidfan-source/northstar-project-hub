@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "./supabase";
+import { DiagramBuilder } from "./DiagramBuilder";
 import vodafoneThreeLogo from "./assets/vodafonethree-wordmark.svg";
 import vodafoneThreeSymbol from "./assets/vodafonethree-symbol.svg";
 
@@ -150,6 +151,7 @@ type View =
   | "portfolio"
   | "governance"
   | "raci"
+  | "diagram"
   | "activity";
 
 const columns: { id: Status; label: string; tone: string }[] = [
@@ -248,6 +250,8 @@ function App() {
               ? "governance"
               : window.location.hash === "#raci"
                 ? "raci"
+                : window.location.hash === "#diagram"
+                  ? "diagram"
               : window.location.hash === "#activity"
                 ? "activity"
                 : "overview";
@@ -1100,6 +1104,10 @@ function App() {
             <Users size={17} />
             Readiness RACI
           </a>
+          <a className={`nav-item ${view === "diagram" ? "active" : ""}`} href="#diagram">
+            <GitBranch size={17} />
+            Process & network
+          </a>
           <a
             className={`nav-item ${view === "report" ? "active" : ""}`}
             href="#report"
@@ -1240,6 +1248,8 @@ function App() {
             />
           ) : view === "raci" ? (
             <RaciView project={selectedProject} tasks={projectTasks} members={members} />
+          ) : view === "diagram" ? (
+            <DiagramBuilder projectId={selectedProject.id} projectName={selectedProject.name} />
           ) : view === "activity" ? (
             <ActivityView activities={activities} members={members} />
           ) : projects.length === 0 ? (
