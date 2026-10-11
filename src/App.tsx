@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { supabase } from "./supabase";
 import vodafoneThreeLogo from "./assets/vodafonethree-wordmark.svg";
+import vodafoneThreeSymbol from "./assets/vodafonethree-symbol.svg";
 
 type Status = "backlog" | "progress" | "review" | "done";
 type Priority = "Low" | "Medium" | "High";
@@ -989,7 +990,10 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="workspace-identity">
-          <img src={vodafoneThreeLogo} alt="VodafoneThree" />
+          <div className="brand-lockup" aria-label="VodafoneThree">
+            <img className="brand-symbol" src={vodafoneThreeSymbol} alt="" />
+            <img className="brand-wordmark" src={vodafoneThreeLogo} alt="VodafoneThree" />
+          </div>
           <div>
             <span>Transformation &amp; Readiness</span>
             <small>Project workspace</small>
