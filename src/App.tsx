@@ -221,6 +221,7 @@ function App() {
   const [aiError, setAiError] = useState("");
   const [dragged, setDragged] = useState<number | null>(null);
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
   const [syncing, setSyncing] = useState(true);
   const [notice, setNotice] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -404,11 +405,13 @@ function App() {
         loadCloudTasks(currentUser);
         loadCollaboration(currentUser);
       } else setSyncing(false);
+      setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         const currentUser = session?.user ?? null;
         setUser(currentUser);
+        setAuthReady(true);
         if (currentUser) {
           loadCloudTasks(currentUser);
           loadCollaboration(currentUser);
@@ -960,6 +963,25 @@ function App() {
       if (error) setNotice(error.message);
       else setDependencies((current) => [...current, data as TaskDependency]);
     }
+  }
+
+  if (!authReady) {
+    return (
+      <main className="auth-gate auth-loading">
+        <LoaderCircle size={28} className="spin" />
+        <span>Checking access…</span>
+      </main>
+    );
+  }
+
+  if (!user) {
+    return (
+      <AuthModal
+        locked
+        onClose={() => undefined}
+        onNotice={setNotice}
+      />
+    );
   }
 
   return (
@@ -3625,9 +3647,11 @@ function PasswordChangeModal({ onChanged }: { onChanged: () => void }) {
 function AuthModal({
   onClose,
   onNotice,
+  locked = false,
 }: {
   onClose: () => void;
   onNotice: (message: string) => void;
+  locked?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -3652,7 +3676,10 @@ function AuthModal({
   }
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
+    <div
+      className={`modal-backdrop ${locked ? "auth-gate" : ""}`}
+      onMouseDown={locked ? undefined : onClose}
+    >
       <div
         className="modal auth-modal"
         onMouseDown={(e) => e.stopPropagation()}
@@ -3662,13 +3689,14 @@ function AuthModal({
             <span>TRANSFORMATION AND READINESS</span>
             <h2>Welcome back</h2>
           </div>
-          <button onClick={onClose}>
-            <X size={20} />
-          </button>
+          {!locked && (
+            <button onClick={onClose}>
+              <X size={20} />
+            </button>
+          )}
         </div>
         <p className="auth-copy">
-          Sign in with your Northstar username. Usernames are not
-          case-sensitive.
+          Sign in with your team username. Usernames are not case-sensitive.
         </p>
         <form onSubmit={submit}>
           <label>

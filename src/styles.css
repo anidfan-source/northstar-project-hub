@@ -70,6 +70,9 @@ h1,h2,h3,p { margin-top: 0; }.title-row h1 { font: 700 29px Manrope, sans-serif;
 .notice { margin: -14px 0 22px; display: flex; justify-content: space-between; align-items: center; background: #fff7e8; color: #765a2a; border: 1px solid #edddb8; border-radius: 8px; padding: 9px 12px; font-size: 10px; }
 .notice button { border: 0; background: transparent; color: inherit; }
 .auth-modal { width: min(430px, 100%); }
+.auth-gate { background: radial-gradient(circle at 20% 10%, #314440 0, #172321 42%, #101917 100%); }
+.auth-gate .auth-modal { box-shadow: 0 28px 90px rgba(0,0,0,.38); }
+.auth-loading { position: fixed; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; color: #d9e0dc; font-size: 12px; letter-spacing: .04em; }
 .task-card { cursor: pointer; transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease; }
 .task-card:hover { transform: translateY(-1px); border-color: #cdd4cd; box-shadow: 0 7px 18px rgba(24,34,31,.07); }
 .task-detail-modal { width: min(570px, 100%); }
