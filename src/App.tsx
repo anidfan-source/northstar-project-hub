@@ -149,6 +149,7 @@ type View =
   | "messages"
   | "portfolio"
   | "governance"
+  | "raci"
   | "activity";
 
 const columns: { id: Status; label: string; tone: string }[] = [
@@ -245,6 +246,8 @@ function App() {
             ? "portfolio"
             : window.location.hash === "#governance"
               ? "governance"
+              : window.location.hash === "#raci"
+                ? "raci"
               : window.location.hash === "#activity"
                 ? "activity"
                 : "overview";
@@ -694,12 +697,17 @@ function App() {
     setAiError("");
     setAiDraft(null);
     const form = new FormData(event.currentTarget);
+    const mode = String(form.get("mode") || "idea");
+    const readinessBrief = mode === "workstream"
+      ? "Convert this existing workstream into an organisational readiness plan. Retain useful current activity, identify readiness gaps, and cover impacts, stakeholders, communications, training, business acceptance, adoption and BAU transition: "
+      : "Build an organisational readiness plan from this new idea. Cover impacts, stakeholders, communications, training, business acceptance, adoption and BAU transition: ";
     const { data, error } = await supabase.functions.invoke(
       "generate-project",
       {
         body: {
-          prompt: String(form.get("prompt")),
+          prompt: readinessBrief + String(form.get("prompt")),
           horizon: String(form.get("horizon")),
+          mode,
         },
       },
     );
@@ -1088,6 +1096,10 @@ function App() {
             <ShieldAlert size={17} />
             RAID & decisions
           </a>
+          <a className={`nav-item ${view === "raci" ? "active" : ""}`} href="#raci">
+            <Users size={17} />
+            Readiness RACI
+          </a>
           <a
             className={`nav-item ${view === "report" ? "active" : ""}`}
             href="#report"
@@ -1226,6 +1238,8 @@ function App() {
               onAddDecision={addDecision}
               signedIn={!!user}
             />
+          ) : view === "raci" ? (
+            <RaciView project={selectedProject} tasks={projectTasks} members={members} />
           ) : view === "activity" ? (
             <ActivityView activities={activities} members={members} />
           ) : projects.length === 0 ? (
@@ -1906,19 +1920,24 @@ function App() {
             {!aiDraft ? (
               <form onSubmit={generateProject}>
                 <p className="auth-copy">
-                  Describe the outcome, audience, constraints, and anything that
-                  must be included. Gemini will draft the project plan for your
-                  review.
+                  Turn a new change idea or an existing workstream into a readiness plan covering impacts, stakeholders, communications, training, adoption and transition to BAU.
                 </p>
                 <label>
-                  What are you planning?
+                  Starting point
+                  <select name="mode" defaultValue="idea">
+                    <option value="idea">New idea — build from scratch</option>
+                    <option value="workstream">Existing workstream — convert into a plan</option>
+                  </select>
+                </label>
+                <label>
+                  Describe the change or workstream
                   <textarea
                     name="prompt"
                     required
                     minLength={15}
                     rows={6}
                     autoFocus
-                    placeholder="Example: Build a national outage viewer showing disruptive works and severe weather. Include data discovery, interactive mapping, alerting, accessibility testing, and launch."
+                    placeholder="Example: Prepare operations, customer service and field teams for a new outage viewer. Include impacts, communications, training, readiness evidence, adoption measures and BAU handover."
                   />
                 </label>
                 <label>
@@ -3668,6 +3687,31 @@ function PasswordChangeModal({ onChanged }: { onChanged: () => void }) {
       </div>
     </div>
   );
+}
+
+function RaciView({ project, tasks, members }: { project: Project; tasks: Task[]; members: Profile[] }) {
+  const key = `northstar-raci-${project.id}`;
+  const [matrix, setMatrix] = useState<Record<string, string>>(() => JSON.parse(localStorage.getItem(key) || "{}"));
+  useEffect(() => { setMatrix(JSON.parse(localStorage.getItem(key) || "{}")); }, [key]);
+  useEffect(() => { localStorage.setItem(key, JSON.stringify(matrix)); }, [key, matrix]);
+  const people = members.map((m) => m.username);
+  const fallback = ["Stakeholder impact assessment", "Readiness communications", "Training and capability", "Business acceptance", "Adoption and BAU handover"];
+  const rows = tasks.length ? tasks.map((t) => ({ id: String(t.id), title: t.title, lane: t.tag || "Readiness delivery" })) : fallback.map((title, i) => ({ id: `ready-${i}`, title, lane: i < 2 ? "Engagement & impact" : i < 4 ? "Capability & assurance" : "Adoption & transition" }));
+  const lanes = Array.from(new Set(rows.map((r) => r.lane)));
+  const setRole = (row: string, person: string, role: string) => setMatrix((m) => ({ ...m, [`${row}:${person}`]: role }));
+  const generate = () => {
+    const next: Record<string, string> = {};
+    rows.forEach((row, i) => people.forEach((person, p) => { next[`${row.id}:${person}`] = p === i % people.length ? "R" : p === (i + 1) % people.length ? "A" : p === (i + 2) % people.length ? "C" : "I"; }));
+    setMatrix(next);
+  };
+  return <section className="raci-page">
+    <header><div><span>READINESS GOVERNANCE</span><h1>RACI swimlanes</h1><p>{project.name} · clarify ownership across readiness workstreams.</p></div><button className="ai-button" onClick={generate} disabled={!people.length}><WandSparkles size={16}/> Build with AI</button></header>
+    <div className="raci-legend"><b>R</b> Responsible <b>A</b> Accountable <b>C</b> Consulted <b>I</b> Informed</div>
+    {!people.length ? <div className="log-empty">Add team members to build the matrix.</div> : <div className="raci-matrix">
+      <div className="raci-row raci-head"><strong>Readiness deliverable</strong>{people.map(p => <b key={p}>{p}</b>)}</div>
+      {lanes.map(lane => <div className="raci-lane" key={lane}><h3>{lane}</h3>{rows.filter(r => r.lane === lane).map(row => <div className="raci-row" key={row.id}><span>{row.title}</span>{people.map(person => <select aria-label={`${row.title}: ${person}`} key={person} value={matrix[`${row.id}:${person}`] || ""} onChange={e => setRole(row.id, person, e.target.value)}><option value="">—</option><option>R</option><option>A</option><option>C</option><option>I</option></select>)}</div>)}</div>)}
+    </div>}
+  </section>;
 }
 
 function AuthModal({

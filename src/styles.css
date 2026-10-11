@@ -221,6 +221,12 @@ h1,h2,h3,p { margin-top: 0; }.title-row h1 { font: 700 29px Manrope, sans-serif;
   .cloud-banner { align-items: flex-start; gap: 10px; }
   .cloud-banner button { flex: 0 0 auto; }
 }
+.raci-page > header { display:flex; justify-content:space-between; align-items:end; margin-bottom:16px; }
+.raci-page header span { color:#a71931; font-size:8px; font-weight:800; letter-spacing:.14em; }
+.raci-page h1 { font:700 26px Manrope,sans-serif; margin:5px 0; }.raci-page header p{font-size:11px;color:#7b8581}
+.raci-legend{display:flex;gap:8px;align-items:center;background:#fff;border:1px solid #f0dfe1;border-radius:10px;padding:10px 14px;font-size:9px;color:#745e63;margin-bottom:12px}.raci-legend b{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;background:#f3d1d6;color:#96182d}
+.raci-matrix{overflow:auto;background:#fff;border:1px solid #f0dfe1;border-radius:13px}.raci-row{display:grid;grid-template-columns:minmax(230px,2fr) repeat(var(--people,7),minmax(86px,1fr));min-width:900px;border-bottom:1px solid #f4e8e9;align-items:center}.raci-row>*{padding:9px}.raci-head{background:#fff6f6;color:#7d646a;font-size:8px}.raci-head b{text-align:center}.raci-lane h3{position:sticky;left:0;margin:0;padding:8px 12px;background:#f3d1d6;color:#8e172b;font-size:9px;text-transform:uppercase;letter-spacing:.1em}.raci-row span{font-size:10px;font-weight:600}.raci-row select{margin:5px auto;width:44px;border:1px solid #ead5d8;border-radius:7px;background:#fff;padding:6px;text-align:center;color:#762032;font-weight:800}
+@media(max-width:720px){.raci-page>header{align-items:flex-start;gap:10px}.raci-page .ai-button{white-space:nowrap}}
 
 /* VodafoneThree pastel brand system */
 body { background: linear-gradient(135deg, #fff 0%, #fff9f9 48%, #fff2f3 100%); }

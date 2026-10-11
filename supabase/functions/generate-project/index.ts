@@ -13,14 +13,14 @@ Deno.serve(async (request) => {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new Response(JSON.stringify({ error: 'Sign in to use the AI project builder.' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 
-    const { prompt, horizon = '8 weeks' } = await request.json()
+    const { prompt, horizon = '8 weeks', mode = 'idea' } = await request.json()
     if (!prompt || String(prompt).trim().length < 15) throw new Error('Describe the project in at least 15 characters.')
     const apiKey = Deno.env.get('GEMINI_API_KEY')
     if (!apiKey) throw new Error('Gemini is not configured yet.')
 
-    const systemPrompt = `You are an expert project manager. Create a practical project plan from the user's description. The requested horizon is ${horizon}. Return JSON only with this shape:
+    const systemPrompt = `You are an expert organisational readiness lead. ${mode === 'workstream' ? 'Convert the described existing workstream into a structured readiness plan, retaining useful current activity and exposing gaps.' : 'Turn the new change idea into a practical readiness plan from scratch.'} The requested horizon is ${horizon}. Cover stakeholder and change impacts, communications, training and capability, operational readiness, business acceptance, adoption measures, risks and transition to BAU. Return JSON only with this shape:
 {"name":"short project name","description":"one sentence outcome","color":"coral|violet|mint","notes":"useful Markdown brief with Goals, Scope, Success criteria, Risks, and assumptions","phases":[{"name":"phase","startOffset":0,"durationDays":7}],"tasks":[{"title":"action-oriented task","description":"clear outcome","phaseIndex":0,"priority":"Low|Medium|High","assignee":"JD|AM|SK","tag":"short category"}]}
-Create 4-6 phases and 8-14 useful tasks. startOffset and durationDays are integers relative to today. Keep all work inside the requested horizon. Do not include markdown fences around JSON.`
+Create 4-6 readiness phases and 8-14 useful readiness tasks. Use readiness workstream names as task tags. startOffset and durationDays are integers relative to today. Keep all work inside the requested horizon. Do not include markdown fences around JSON.`
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
