@@ -11,12 +11,10 @@ import type { User } from "@supabase/supabase-js";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
-  Bell,
   BriefcaseBusiness,
   CalendarDays,
   Check,
   ChevronDown,
-  CircleHelp,
   Clock3,
   Cloud,
   Download,
@@ -31,12 +29,10 @@ import {
   LogOut,
   MessageCircle,
   MessageSquare,
-  MoreHorizontal,
   Plus,
   ShieldAlert,
   Presentation,
   Search,
-  Settings,
   SlidersHorizontal,
   Sparkles,
   Target,
@@ -96,6 +92,16 @@ type TeamMessage = {
   body: string;
   created_at: string;
 };
+
+function initials(value: string) {
+  const clean = value.trim();
+  if (!clean) return "—";
+  const parts = clean.split(/[\s._-]+/).filter(Boolean);
+  return (parts.length > 1
+    ? `${parts[0][0]}${parts[1][0]}`
+    : clean.slice(0, 2)
+  ).toUpperCase();
+}
 type RaidItem = {
   id: number;
   project_id: ProjectId;
@@ -509,9 +515,7 @@ function App() {
     (completed / Math.max(projectTasks.length, 1)) * 100,
   );
   const teamInitials = members.length
-    ? members
-        .slice(0, 4)
-        .map((member) => member.username.slice(0, 2).toUpperCase())
+    ? members.map((member) => initials(member.username))
     : Array.from(
         new Set(projectTasks.map((task) => task.assignee).filter(Boolean)),
       ).slice(0, 4);
@@ -747,7 +751,10 @@ function App() {
       status: "backlog" as Status,
       priority: task.priority,
       due: dueLabel(dateAt(aiDraft.phases[task.phaseIndex]?.startOffset || 0)),
-      assignee: task.assignee || "JD",
+      assignee:
+        members[index % Math.max(members.length, 1)]?.username ||
+        task.assignee ||
+        "",
       tag: task.tag || "General",
     }));
     const inserted = await supabase
@@ -958,20 +965,10 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">
-            <Sparkles size={16} />
-          </div>
-          <span>Northstar</span>
+        <div className="workspace-identity">
+          <span>Transformation &amp; Readiness</span>
+          <small>Project workspace</small>
         </div>
-        <button className="workspace-switcher">
-          <span className="workspace-avatar">N</span>
-          <span>
-            <b>My workspace</b>
-            <small>Project hub</small>
-          </span>
-          <ChevronDown size={15} />
-        </button>
         <nav className="nav-group" aria-label="Main navigation">
           <a
             className={`nav-item ${view === "overview" ? "active" : ""}`}
@@ -1011,10 +1008,6 @@ function App() {
           <a className="nav-item" href="#board">
             <ListTodo size={17} />
             My work <span className="nav-count">{tasks.length}</span>
-          </a>
-          <a className="nav-item" href="#">
-            <Bell size={17} />
-            Inbox
           </a>
           <a
             className={`nav-item ${view === "messages" ? "active" : ""}`}
@@ -1073,21 +1066,12 @@ function App() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <a className="nav-item" href="#">
-            <CircleHelp size={17} />
-            Help & resources
-          </a>
-          <a className="nav-item" href="#">
-            <Settings size={17} />
-            Settings
-          </a>
           <div className="profile">
             <span className="avatar dark">{accountInitial}</span>
             <span>
               <b>{accountName}</b>
               <small>{user?.email || "Local workspace"}</small>
             </span>
-            <MoreHorizontal size={17} />
           </div>
         </div>
       </aside>
@@ -1112,13 +1096,10 @@ function App() {
               )}
               {syncing ? "Syncing" : user ? "Cloud synced" : "Local mode"}
             </span>
-            <button className="icon-button">
-              <Bell size={18} />
-            </button>
             {teamInitials.length > 0 && (
               <div className="avatar-stack">
-                {teamInitials.map((i) => (
-                  <span className="avatar" key={i}>
+                {teamInitials.map((i, index) => (
+                  <span className="avatar" key={`${i}-${index}`}>
                     {i}
                   </span>
                 ))}
@@ -1400,8 +1381,8 @@ function App() {
                       </div>
                       <div className="large-avatars">
                         {teamInitials.length ? (
-                          teamInitials.map((i) => (
-                            <span className="avatar" key={i}>
+                          teamInitials.map((i, index) => (
+                            <span className="avatar" key={`${i}-${index}`}>
                               {i}
                             </span>
                           ))
@@ -1495,9 +1476,6 @@ function App() {
                                 >
                                   <div className="task-top">
                                     <span className="tag">{task.tag}</span>
-                                    <button aria-label="Task options">
-                                      <MoreHorizontal size={17} />
-                                    </button>
                                   </div>
                                   <h3>{task.title}</h3>
                                   <p>{task.description}</p>
@@ -1519,8 +1497,11 @@ function App() {
                                     </span>
                                   </div>
                                   <div className="task-footer">
-                                    <span className="avatar">
-                                      {task.assignee}
+                                    <span className="assignee-chip">
+                                      <span className="avatar">
+                                        {initials(task.assignee)}
+                                      </span>
+                                      {task.assignee || "Unassigned"}
                                     </span>
                                     {task.status === "done" && (
                                       <span className="complete">
@@ -1599,7 +1580,14 @@ function App() {
                 </label>
                 <label>
                   Assignee
-                  <input name="assignee" placeholder="e.g. JD" />
+                  <select name="assignee" defaultValue={profile?.username || ""}>
+                    <option value="">Unassigned</option>
+                    {members.map((member) => (
+                      <option key={member.user_id} value={member.username}>
+                        {member.username}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <div className="form-grid">
@@ -1688,11 +1676,27 @@ function App() {
               <div className="form-grid">
                 <label>
                   Assignee
-                  <input
+                  <select
                     name="assignee"
                     defaultValue={selectedTask.assignee}
-                    placeholder="Username or initials"
-                  />
+                  >
+                    <option value="">Unassigned</option>
+                    {selectedTask.assignee &&
+                      !members.some(
+                        (member) =>
+                          member.username.toLowerCase() ===
+                          selectedTask.assignee.toLowerCase(),
+                      ) && (
+                        <option value={selectedTask.assignee}>
+                          {selectedTask.assignee} (legacy)
+                        </option>
+                      )}
+                    {members.map((member) => (
+                      <option key={member.user_id} value={member.username}>
+                        {member.username}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label>
                   Due date
@@ -2878,11 +2882,11 @@ function PlanView({
             {highPriority.length ? (
               highPriority.slice(0, 3).map((task) => (
                 <button key={task.id} onClick={() => onOpenTask(task)}>
-                  <span className="avatar">{task.assignee}</span>
+                  <span className="avatar">{initials(task.assignee)}</span>
                   <span>
                     <strong>{task.title}</strong>
                     <small>
-                      {task.tag} · {task.due}
+                      {task.assignee || "Unassigned"} · {task.tag} · {task.due}
                     </small>
                   </span>
                   <ChevronDown size={15} />
