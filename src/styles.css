@@ -1,29 +1,33 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700&display=swap');
 
-:root { font-family: 'DM Sans', sans-serif; color: #18201e; background: #f6f7f3; font-synthesis: none; }
+:root { font-family: 'DM Sans', sans-serif; color: #291d20; background: #fff8f8; font-synthesis: none; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; min-height: 100vh; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 238px 1fr; }
-.sidebar { position: fixed; inset: 0 auto 0 0; width: 238px; background: #172321; color: #d9e0dc; padding: 22px 14px 16px; display: flex; flex-direction: column; z-index: 5; }
-.workspace-identity { padding: 2px 10px 22px; border-bottom: 1px solid #2b3936; margin-bottom: 17px; }
-.workspace-identity span { display: block; color: #fff; font: 700 14px Manrope, sans-serif; line-height: 1.35; }
-.workspace-identity small, .profile small { display: block; font-size: 10px; color: #91a09b; margin-top: 4px; }
+.sidebar { position: fixed; inset: 0 auto 0 0; width: 238px; background: #fff4f4; color: #412f33; padding: 18px 14px 16px; display: flex; flex-direction: column; z-index: 5; border-right: 1px solid #f3d7d9; box-shadow: 8px 0 28px rgba(121,35,48,.04); }
+.workspace-identity { padding: 4px 9px 18px; border-bottom: 1px solid #f0d5d8; margin-bottom: 14px; }
+.workspace-identity img { display: block; width: 154px; height: auto; margin-bottom: 16px; }
+.workspace-identity span { display: block; color: #38272b; font: 700 13px Manrope, sans-serif; line-height: 1.35; }
+.workspace-identity small, .profile small { display: block; font-size: 10px; color: #967b81; margin-top: 3px; }
 .profile b { display: block; font-size: 12px; }
 .nav-group { display: grid; gap: 3px; }
-.nav-item { position: relative; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #aebbb7; padding: 9px 11px; border-radius: 8px; font-size: 13px; font-weight: 500; }
-.nav-item:hover, .nav-item.active { background: #263532; color: white; }
-.nav-count { margin-left: auto; font-size: 10px; background: #344440; padding: 2px 6px; border-radius: 10px; }
+.nav-item { position: relative; display: flex; align-items: center; gap: 10px; text-decoration: none; color: #684f55; padding: 9px 11px; border-radius: 9px; font-size: 12px; font-weight: 600; transition: color .16s ease, background .16s ease, transform .16s ease; }
+.nav-item:hover { background: #ffe5e7; color: #a32032; transform: translateX(2px); }
+.nav-item.active { background: #f8d7da; color: #b1122b; box-shadow: inset 3px 0 #e60000; }
+.nav-item.active svg { color: #e60000; }
+.nav-count { margin-left: auto; font-size: 10px; background: #f3d8dc; color: #a32032; padding: 2px 6px; border-radius: 10px; }
 .dot, .notification { width: 6px; height: 6px; background: #e76f51; border-radius: 50%; margin-left: auto; }
-.nav-heading { margin: 26px 10px 8px; display: flex; align-items: center; justify-content: space-between; color: #71817c; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.nav-section-label { margin: 17px 11px 6px; color: #a17d84; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.nav-heading { margin: 20px 10px 8px; display: flex; align-items: center; justify-content: space-between; color: #a17d84; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .project-dot { display: inline-block; width: 8px; height: 8px; border-radius: 3px; flex: 0 0 auto; }
 .coral { background: #e76f51; }.violet { background: #8b7ec8; }.mint { background: #5faf91; }
-.nav-item.selected { color: white; }
+.nav-item.selected { color: #b1122b; }
 .sidebar-bottom { margin-top: auto; }
-.profile { border-top: 1px solid #2b3936; margin-top: 12px; padding: 16px 8px 0; display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; }
+.profile { border-top: 1px solid #f0d5d8; margin-top: 12px; padding: 16px 8px 0; display: grid; grid-template-columns: auto 1fr; gap: 9px; align-items: center; }
 main { grid-column: 2; min-width: 0; }
-.topbar { height: 68px; border-bottom: 1px solid #e2e5df; background: rgba(250,251,248,.9); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; }
+.topbar { height: 68px; border-bottom: 1px solid #f0dfe1; background: rgba(255,255,255,.92); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 4; display: flex; align-items: center; justify-content: space-between; padding: 0 34px; }
 .search { display: flex; align-items: center; gap: 9px; color: #7f8a86; width: min(440px, 50vw); }
 .search input { border: 0; outline: 0; background: transparent; flex: 1; font-size: 13px; color: #26312e; }
 kbd { border: 1px solid #dde1db; background: white; border-radius: 5px; padding: 3px 7px; font-size: 10px; color: #89928f; }
@@ -203,4 +207,48 @@ h1,h2,h3,p { margin-top: 0; }.title-row h1 { font: 700 29px Manrope, sans-serif;
   .share-button { display: flex; padding: 7px 9px; font-size: 0; }
   .cloud-banner { align-items: flex-start; gap: 10px; }
   .cloud-banner button { flex: 0 0 auto; }
+}
+
+/* VodafoneThree pastel brand system */
+body { background: linear-gradient(135deg, #fff 0%, #fff9f9 48%, #fff2f3 100%); }
+.primary, .report-actions button.primary { background: #e60000; box-shadow: 0 5px 14px rgba(230,0,0,.15); }
+.primary:hover, .report-actions button.primary:hover { background: #c90018; }
+.avatar.dark { background: #e60000; color: #fff; border-color: #fff4f4; }
+.sync-state.cloud { color: #a9152a; background: #ffe6e8; }
+.cloud-banner { border-color: #f1cdd1; background: #fff0f1; color: #704850; }
+.cloud-banner button { background: #c91b32; }
+.summary-card, .plan-progress-card, .plan-stat, .roadmap-panel, .workload-panel, .focus-panel, .notes-panel,
+.portfolio-summary > div, .portfolio-grid > button, .quick-log, .log-table, .activity-list, .messages-page,
+.visual-picker, .slide-visuals article { border-color: #f0dfe1; box-shadow: 0 8px 28px rgba(121,35,48,.045); }
+.column, .message-feed, .focus-list button, .task-comments article { background: #fff6f6; }
+.task-card { border-color: #f0dfe1; }
+.task-card:hover { border-color: #e7bcc1; box-shadow: 0 7px 18px rgba(121,35,48,.08); }
+.filters, .segmented, .horizon-picker { background: #f8e9eb; }
+.eyebrow, .portfolio-page > header > span, .governance-page > header > div > span,
+.activity-page > header > span, .visual-picker > div > span, .slide-preview header span,
+.slide-preview article > small { color: #c31a31; }
+.progress-ring { background: conic-gradient(#e60000 var(--progress), #f5e5e7 0); }
+.mini-ring { background: conic-gradient(#e60000 var(--progress), #f5e5e7 0); }
+.plan-stat > svg { color: #c91b32; background: #ffe6e8; }
+.progress-track, .stacked-progress, .mini-bars i { background: #f5e5e7; }
+.report-actions button, .edit-plan, .share-button { border-color: #ecd8db; }
+.modal input:focus, .modal textarea:focus, .modal select:focus,
+.message-composer input:focus { border-color: #d94559; box-shadow: 0 0 0 3px rgba(217,69,89,.11); }
+.auth-gate { background: radial-gradient(circle at 20% 10%, #fff 0, #fff0f1 48%, #f8d9dd 100%); }
+.auth-loading { color: #6b4850; }
+.project-select { color: #725a60; }
+.project-nav-row.selected { background: #f8d7da; }
+.project-nav-row.selected .project-select { color: #ad142b; }
+.project-remove { color: #9b757d; }
+.nav-heading .new-project-trigger { color: #b21c32; }
+.nav-heading .new-project-trigger:hover { color: #9d1026; background: #ffe2e5; }
+
+@media (max-width: 720px) {
+  .sidebar { padding: 12px 14px; border-right: 0; border-bottom: 1px solid #f0d5d8; }
+  .workspace-identity { display: flex; align-items: center; gap: 14px; padding: 2px 4px 12px; }
+  .workspace-identity img { width: 126px; margin: 0; }
+  .sidebar .nav-section-label, .sidebar .nav-heading, .sidebar .projects, .sidebar-bottom { display: none; }
+  .sidebar > .nav-group:not(.projects) { display: flex; gap: 5px; overflow-x: auto; padding: 3px 0; scrollbar-width: none; }
+  .sidebar > .nav-group:not(.projects)::-webkit-scrollbar { display: none; }
+  .nav-item { white-space: nowrap; flex: 0 0 auto; padding: 8px 10px; }
 }

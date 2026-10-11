@@ -41,6 +41,7 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "./supabase";
+import vodafoneThreeLogo from "./assets/vodafonethree-wordmark.svg";
 
 type Status = "backlog" | "progress" | "review" | "done";
 type Priority = "Low" | "Medium" | "High";
@@ -988,9 +989,13 @@ function App() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="workspace-identity">
-          <span>Transformation &amp; Readiness</span>
-          <small>Project workspace</small>
+          <img src={vodafoneThreeLogo} alt="VodafoneThree" />
+          <div>
+            <span>Transformation &amp; Readiness</span>
+            <small>Project workspace</small>
+          </div>
         </div>
+        <div className="nav-section-label">Workspace</div>
         <nav className="nav-group" aria-label="Main navigation">
           <a
             className={`nav-item ${view === "overview" ? "active" : ""}`}
@@ -1006,6 +1011,9 @@ function App() {
             <BriefcaseBusiness size={17} />
             Portfolio
           </a>
+        </nav>
+        <div className="nav-section-label">Project delivery</div>
+        <nav className="nav-group" aria-label="Project delivery navigation">
           <a
             className={`nav-item ${view === "plan" ? "active" : ""}`}
             href="#plan"
@@ -1025,12 +1033,11 @@ function App() {
             href="#report"
           >
             <Presentation size={17} />
-            Slides
+            Reports &amp; slides
           </a>
-          <a className="nav-item" href="#board">
-            <ListTodo size={17} />
-            My work <span className="nav-count">{tasks.length}</span>
-          </a>
+        </nav>
+        <div className="nav-section-label">Team</div>
+        <nav className="nav-group" aria-label="Team navigation">
           <a
             className={`nav-item ${view === "messages" ? "active" : ""}`}
             href="#messages"
