@@ -3,6 +3,7 @@ import { ReactFlow, Background, Controls, MiniMap, Handle, Position, addEdge, us
 import "@xyflow/react/dist/style.css";
 import { Cloud, Database, Diamond, Download, Network, Plus, Square, UserRound, WandSparkles } from "lucide-react";
 import { supabase } from "./supabase";
+import { makeVsdx } from "./vsdx";
 
 const shapes = [
   ["process", "Process", Square], ["decision", "Decision", Diamond], ["system", "System", Network],
@@ -46,7 +47,8 @@ export function DiagramBuilder({ projectId, projectName }: { projectId: string |
     setShowAi(false);
   };
   const download = (href: string, extension: string) => { const a = document.createElement("a"); a.href = href; a.download = `${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-diagram.${extension}`; a.click(); };
-  const exportDiagram = async (format: "png" | "svg" | "pdf" | "json") => {
+  const exportDiagram = async (format: "png" | "svg" | "pdf" | "json" | "vsdx") => {
+    if (format === "vsdx") { const blob = await makeVsdx(nodes, edges); const url = URL.createObjectURL(blob); download(url, "vsdx"); URL.revokeObjectURL(url); return; }
     if (format === "json") { const blob = new Blob([JSON.stringify({ project: projectName, nodes, edges }, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); download(url, "json"); URL.revokeObjectURL(url); return; }
     const canvas = wrapper.current?.querySelector(".react-flow") as HTMLElement | null; if (!canvas) return;
     const { toPng, toSvg } = await import("html-to-image");
@@ -55,7 +57,7 @@ export function DiagramBuilder({ projectId, projectName }: { projectId: string |
     const png = await toPng(canvas, options); if (format === "png") return download(png, "png");
     const { jsPDF } = await import("jspdf"); const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" }); const width = 277; const height = Math.min(190, width * canvas.clientHeight / canvas.clientWidth); pdf.addImage(png, "PNG", 10, 10, width, height); pdf.save(`${projectName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-diagram.pdf`);
   };
-  return <section className="diagram-page"><header><div><span>VISUAL DESIGN</span><h1>Process & network builder</h1><p>{projectName} · drag shapes, connect them, and double-click to edit.</p></div><div className="diagram-header-actions"><button className="ai-button" onClick={() => setShowAi(true)}><WandSparkles size={16}/> Build with AI</button><div className="export-menu"><Download size={15}/><button onClick={() => exportDiagram("png")}>PNG</button><button onClick={() => exportDiagram("svg")}>SVG</button><button onClick={() => exportDiagram("pdf")}>PDF</button><button onClick={() => exportDiagram("json")}>JSON</button></div></div></header>
+  return <section className="diagram-page"><header><div><span>VISUAL DESIGN</span><h1>Process & network builder</h1><p>{projectName} · drag shapes, connect them, and double-click to edit.</p></div><div className="diagram-header-actions"><button className="ai-button" onClick={() => setShowAi(true)}><WandSparkles size={16}/> Build with AI</button><div className="export-menu"><Download size={15}/><button onClick={() => exportDiagram("png")}>PNG</button><button onClick={() => exportDiagram("svg")}>SVG</button><button onClick={() => exportDiagram("pdf")}>PDF</button><button onClick={() => exportDiagram("json")}>JSON</button><button onClick={() => exportDiagram("vsdx")}>VSDX</button></div></div></header>
     <div className="diagram-workspace"><aside><b>SHAPES</b>{shapes.map(([id, label, Icon]) => <button key={id} draggable onDragStart={e => e.dataTransfer.setData("shape", id)} onClick={() => addNode(id)}><span className={`shape-legend ${id}`}><Icon size={14}/></span>{label}<Plus size={12}/></button>)}</aside><div className="diagram-canvas" ref={wrapper} onDrop={drop} onDragOver={e => e.preventDefault()}><ReactFlow nodeTypes={nodeTypes} nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeDoubleClick={editNode} fitView snapToGrid snapGrid={[10,10]}><Background gap={20}/><MiniMap/><Controls/></ReactFlow></div></div>
     {showAi && <div className="diagram-ai"><textarea value={prompt} onChange={e => setPrompt(e.target.value)} placeholder="Describe the readiness process, operating model flow, system landscape or network architecture…"/><button className="primary" onClick={generate} disabled={busy || prompt.length < 10}><WandSparkles size={15}/>{busy ? "Creating…" : "Generate editable diagram"}</button><button className="cancel" onClick={() => setShowAi(false)}>Cancel</button></div>}
   </section>;
