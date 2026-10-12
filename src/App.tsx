@@ -1070,6 +1070,7 @@ function App() {
           <div className="project-context-controls">
             <select
               id="current-project"
+              title={selectedProject.name}
               value={String(selectedProjectId ?? "")}
               onChange={(event) => {
                 setSelectedProjectId(event.target.value);
@@ -1120,6 +1121,7 @@ function App() {
               <X size={15} />
             </button>
           </div>
+          {projects.length > 0 && <div className="current-project-full-name">{selectedProject.name}</div>}
         </div>
         <div className="nav-section-label">Workspace</div>
         <nav className="nav-group" aria-label="Main navigation">
