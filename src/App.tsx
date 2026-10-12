@@ -144,6 +144,7 @@ type ActivityEvent = {
   created_at: string;
 };
 type View =
+  | "mywork"
   | "overview"
   | "plan"
   | "report"
@@ -238,7 +239,9 @@ function App() {
   const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const routeView = (): View =>
-    window.location.hash === "#plan"
+    window.location.hash === "#overview"
+      ? "overview"
+      : window.location.hash === "#plan"
       ? "plan"
       : window.location.hash === "#report"
         ? "report"
@@ -254,7 +257,7 @@ function App() {
                   ? "diagram"
               : window.location.hash === "#activity"
                 ? "activity"
-                : "overview";
+                : "mywork";
   const [view, setView] = useState<View>(routeView);
 
   useEffect(() => {
@@ -1070,8 +1073,15 @@ function App() {
         <div className="nav-section-label">Workspace</div>
         <nav className="nav-group" aria-label="Main navigation">
           <a
+            className={`nav-item ${view === "mywork" ? "active" : ""}`}
+            href="#my-work"
+          >
+            <ListTodo size={17} />
+            My work
+          </a>
+          <a
             className={`nav-item ${view === "overview" ? "active" : ""}`}
-            href="#"
+            href="#overview"
           >
             <LayoutDashboard size={17} />
             Overview
@@ -1228,7 +1238,7 @@ function App() {
               raidItems={raidItems}
               onSelect={(id) => {
                 setSelectedProjectId(id);
-                window.location.hash = "#";
+                window.location.hash = "#overview";
               }}
             />
           ) : view === "governance" ? (
@@ -1287,6 +1297,34 @@ function App() {
                 </button>
               </div>
             </section>
+          ) : view === "mywork" ? (
+            <MyWorkView
+              username={accountName}
+              tasks={tasks}
+              projects={projects}
+              query={query}
+              filter={filter}
+              onFilter={setFilter}
+              onOpenTask={setSelectedTask}
+              onOpenProject={(id) => {
+                setSelectedProjectId(id);
+                window.location.hash = "#overview";
+              }}
+            />
+          ) : view === "overview" ? (
+            <WorkspaceOverview
+              projects={projects}
+              tasks={tasks}
+              raidItems={raidItems}
+              query={query}
+              filter={filter}
+              onFilter={setFilter}
+              onOpenTask={setSelectedTask}
+              onOpenProject={(id) => {
+                setSelectedProjectId(id);
+                window.location.hash = "#plan";
+              }}
+            />
           ) : (
             <>
               <div className="eyebrow">
@@ -3154,6 +3192,101 @@ function PlanView({
   );
 }
 
+function TaskListItem({
+  task,
+  project,
+  onOpen,
+}: {
+  task: Task;
+  project?: Project;
+  onOpen: () => void;
+}) {
+  return (
+    <button className="work-task" onClick={onOpen}>
+      <span className={`work-status ${task.status}`} aria-hidden="true" />
+      <span className="work-task-main">
+        <b>{task.title}</b>
+        <small>{project?.name || "Unknown project"} · {task.tag || "General"}</small>
+      </span>
+      <span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span>
+      <span className="work-due"><CalendarDays size={13} />{task.due || "No date"}</span>
+      <span className="work-assignee"><span className="avatar">{initials(task.assignee)}</span>{task.assignee || "Unassigned"}</span>
+    </button>
+  );
+}
+
+function WorkFilters({ filter, onFilter }: { filter: "All" | Priority; onFilter: (value: "All" | Priority) => void }) {
+  return <div className="filters work-filters">
+    {(["All", "High", "Medium", "Low"] as const).map((value) => (
+      <button key={value} className={filter === value ? "active" : ""} onClick={() => onFilter(value)}>{value === "All" ? "All priorities" : value}</button>
+    ))}
+  </div>;
+}
+
+function MyWorkView({ username, tasks, projects, query, filter, onFilter, onOpenTask, onOpenProject }: {
+  username: string;
+  tasks: Task[];
+  projects: Project[];
+  query: string;
+  filter: "All" | Priority;
+  onFilter: (value: "All" | Priority) => void;
+  onOpenTask: (task: Task) => void;
+  onOpenProject: (id: ProjectId) => void;
+}) {
+  const mine = tasks.filter((task) => task.assignee.trim().toLowerCase() === username.trim().toLowerCase());
+  const visible = mine.filter((task) => `${task.title} ${task.description} ${task.tag}`.toLowerCase().includes(query.toLowerCase()) && (filter === "All" || task.priority === filter));
+  const open = mine.filter((task) => task.status !== "done");
+  const projectCount = new Set(mine.map((task) => String(task.project_id))).size;
+  const projectFor = (task: Task) => projects.find((project) => String(project.id) === String(task.project_id));
+  return <section className="work-page">
+    <header className="work-header"><div><span>PERSONAL WORKSPACE</span><h1>My work</h1><p>Your assigned tasks across every transformation and readiness project.</p></div><WorkFilters filter={filter} onFilter={onFilter}/></header>
+    <div className="work-summary">
+      <article><small>OPEN TASKS</small><b>{open.length}</b><span>assigned to you</span></article>
+      <article><small>HIGH PRIORITY</small><b>{open.filter((task) => task.priority === "High").length}</b><span>need attention</span></article>
+      <article><small>IN REVIEW</small><b>{mine.filter((task) => task.status === "review").length}</b><span>awaiting sign-off</span></article>
+      <article><small>PROJECTS</small><b>{projectCount}</b><span>with your work</span></article>
+    </div>
+    <div className="work-panel">
+      <div className="work-panel-head"><div><h2>Assigned to {username}</h2><p>{visible.length} task{visible.length === 1 ? "" : "s"} shown</p></div></div>
+      <div className="work-task-list">
+        {visible.length ? visible.map((task) => <TaskListItem key={task.id} task={task} project={projectFor(task)} onOpen={() => onOpenTask(task)}/>) : <div className="work-empty"><Check size={22}/><b>You’re all caught up</b><span>No assigned tasks match this view.</span></div>}
+      </div>
+    </div>
+    {projectCount > 0 && <div className="work-project-links"><h2>Your projects</h2><div>{projects.filter((project) => mine.some((task) => String(task.project_id) === String(project.id))).map((project) => <button key={project.id} onClick={() => onOpenProject(project.id)}><span className={`project-dot ${project.color}`}/><span><b>{project.name}</b><small>{mine.filter((task) => String(task.project_id) === String(project.id) && task.status !== "done").length} open tasks</small></span><ChevronDown size={15}/></button>)}</div></div>}
+  </section>;
+}
+
+function WorkspaceOverview({ projects, tasks, raidItems, query, filter, onFilter, onOpenTask, onOpenProject }: {
+  projects: Project[];
+  tasks: Task[];
+  raidItems: RaidItem[];
+  query: string;
+  filter: "All" | Priority;
+  onFilter: (value: "All" | Priority) => void;
+  onOpenTask: (task: Task) => void;
+  onOpenProject: (id: ProjectId) => void;
+}) {
+  const visible = tasks.filter((task) => `${task.title} ${task.description} ${task.tag} ${task.assignee}`.toLowerCase().includes(query.toLowerCase()) && (filter === "All" || task.priority === filter));
+  const projectFor = (task: Task) => projects.find((project) => String(project.id) === String(task.project_id));
+  const done = tasks.filter((task) => task.status === "done").length;
+  return <section className="work-page overview-page">
+    <header className="work-header"><div><span>TRANSFORMATION AND READINESS</span><h1>Overview</h1><p>Every project and task in one team-wide view.</p></div><WorkFilters filter={filter} onFilter={onFilter}/></header>
+    <div className="work-summary">
+      <article><small>PROJECTS</small><b>{projects.length}</b><span>active plans</span></article>
+      <article><small>ALL TASKS</small><b>{tasks.length}</b><span>across the portfolio</span></article>
+      <article><small>COMPLETE</small><b>{done}</b><span>{Math.round(done / Math.max(tasks.length, 1) * 100)}% delivered</span></article>
+      <article><small>OPEN RISKS & ISSUES</small><b>{raidItems.filter((item) => item.status !== "Closed" && ["Risk", "Issue"].includes(item.kind)).length}</b><span>team-wide</span></article>
+    </div>
+    <div className="overview-project-strip">
+      {projects.map((project) => { const projectTasks = tasks.filter((task) => String(task.project_id) === String(project.id)); const complete = projectTasks.filter((task) => task.status === "done").length; const progress = Math.round(complete / Math.max(projectTasks.length, 1) * 100); return <button key={project.id} onClick={() => onOpenProject(project.id)}><div><span className={`project-dot ${project.color}`}/><b>{project.name}</b></div><small>{projectTasks.length} tasks · {progress}% complete</small><i><span style={{ width: `${progress}%` }}/></i></button>; })}
+    </div>
+    <div className="work-panel">
+      <div className="work-panel-head"><div><h2>All tasks</h2><p>{visible.length} task{visible.length === 1 ? "" : "s"} across {projects.length} projects</p></div></div>
+      <div className="work-task-list">{visible.length ? visible.map((task) => <TaskListItem key={task.id} task={task} project={projectFor(task)} onOpen={() => onOpenTask(task)}/>) : <div className="work-empty"><ListTodo size={22}/><b>No tasks found</b><span>Try another search or priority.</span></div>}</div>
+    </div>
+  </section>;
+}
+
 function PortfolioView({
   projects,
   tasks,
@@ -3750,6 +3883,7 @@ function AuthModal({
     setBusy(false);
     if (result.error) setError(result.error.message);
     else {
+      window.location.hash = "#my-work";
       onNotice("Signed in successfully.");
       onClose();
     }
