@@ -3266,7 +3266,15 @@ function WorkspaceOverview({ projects, tasks, raidItems, query, filter, onFilter
   onOpenTask: (task: Task) => void;
   onOpenProject: (id: ProjectId) => void;
 }) {
-  const visible = tasks.filter((task) => `${task.title} ${task.description} ${task.tag} ${task.assignee}`.toLowerCase().includes(query.toLowerCase()) && (filter === "All" || task.priority === filter));
+  const [ownerFilter, setOwnerFilter] = useState("All");
+  const [projectFilter, setProjectFilter] = useState("All");
+  const owners = Array.from(new Set(tasks.map((task) => task.assignee.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const visible = tasks.filter((task) =>
+    `${task.title} ${task.description} ${task.tag} ${task.assignee}`.toLowerCase().includes(query.toLowerCase()) &&
+    (filter === "All" || task.priority === filter) &&
+    (ownerFilter === "All" || task.assignee.toLowerCase() === ownerFilter.toLowerCase()) &&
+    (projectFilter === "All" || String(task.project_id) === projectFilter)
+  );
   const projectFor = (task: Task) => projects.find((project) => String(project.id) === String(task.project_id));
   const done = tasks.filter((task) => task.status === "done").length;
   return <section className="work-page overview-page">
@@ -3281,7 +3289,14 @@ function WorkspaceOverview({ projects, tasks, raidItems, query, filter, onFilter
       {projects.map((project) => { const projectTasks = tasks.filter((task) => String(task.project_id) === String(project.id)); const complete = projectTasks.filter((task) => task.status === "done").length; const progress = Math.round(complete / Math.max(projectTasks.length, 1) * 100); return <button key={project.id} onClick={() => onOpenProject(project.id)}><div><span className={`project-dot ${project.color}`}/><b>{project.name}</b></div><small>{projectTasks.length} tasks · {progress}% complete</small><i><span style={{ width: `${progress}%` }}/></i></button>; })}
     </div>
     <div className="work-panel">
-      <div className="work-panel-head"><div><h2>All tasks</h2><p>{visible.length} task{visible.length === 1 ? "" : "s"} across {projects.length} projects</p></div></div>
+      <div className="work-panel-head overview-task-head">
+        <div><h2>All tasks</h2><p>{visible.length} task{visible.length === 1 ? "" : "s"} across the selected view</p></div>
+        <div className="overview-task-controls">
+          <label><span>Owner</span><select value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="All">All owners</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}</select></label>
+          <label><span>Project</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="All">All projects</option>{projects.map((project) => <option key={project.id} value={String(project.id)}>{project.name}</option>)}</select></label>
+          {(ownerFilter !== "All" || projectFilter !== "All") && <button onClick={() => { setOwnerFilter("All"); setProjectFilter("All"); }}>Clear</button>}
+        </div>
+      </div>
       <div className="work-task-list">{visible.length ? visible.map((task) => <TaskListItem key={task.id} task={task} project={projectFor(task)} onOpen={() => onOpenTask(task)}/>) : <div className="work-empty"><ListTodo size={22}/><b>No tasks found</b><span>Try another search or priority.</span></div>}</div>
     </div>
   </section>;
