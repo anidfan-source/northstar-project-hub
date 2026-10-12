@@ -639,6 +639,22 @@ function App() {
     setSelectedTask(null);
   }
 
+  async function bulkTransferTasks(ids: number[], fromOwner: string, toOwner: string) {
+    if (!ids.length || fromOwner === toOwner) return false;
+    setTasks((current) => current.map((task) => ids.includes(task.id) ? { ...task, assignee: toOwner } : task));
+    if (user) {
+      const { error } = await supabase.from("tasks").update({ assignee: toOwner }).in("id", ids);
+      if (error) {
+        setNotice(error.message);
+        loadCloudTasks(user);
+        return false;
+      }
+      recordActivity("reassigned", "tasks", `${ids.length} task${ids.length === 1 ? "" : "s"} from ${fromOwner} to ${toOwner}`, null);
+    }
+    setNotice(`${ids.length} task${ids.length === 1 ? "" : "s"} transferred from ${fromOwner} to ${toOwner}.`);
+    return true;
+  }
+
   async function duplicateTask(task: Task) {
     const copy: TaskInsert = {
       ...task,
@@ -1315,6 +1331,7 @@ function App() {
             <WorkspaceOverview
               projects={projects}
               tasks={tasks}
+              members={members}
               raidItems={raidItems}
               query={query}
               filter={filter}
@@ -1324,6 +1341,7 @@ function App() {
                 setSelectedProjectId(id);
                 window.location.hash = "#plan";
               }}
+              onBulkTransfer={bulkTransferTasks}
             />
           ) : (
             <>
@@ -3256,19 +3274,26 @@ function MyWorkView({ username, tasks, projects, query, filter, onFilter, onOpen
   </section>;
 }
 
-function WorkspaceOverview({ projects, tasks, raidItems, query, filter, onFilter, onOpenTask, onOpenProject }: {
+function WorkspaceOverview({ projects, tasks, members, raidItems, query, filter, onFilter, onOpenTask, onOpenProject, onBulkTransfer }: {
   projects: Project[];
   tasks: Task[];
+  members: Profile[];
   raidItems: RaidItem[];
   query: string;
   filter: "All" | Priority;
   onFilter: (value: "All" | Priority) => void;
   onOpenTask: (task: Task) => void;
   onOpenProject: (id: ProjectId) => void;
+  onBulkTransfer: (ids: number[], fromOwner: string, toOwner: string) => Promise<boolean>;
 }) {
   const [ownerFilter, setOwnerFilter] = useState("All");
   const [projectFilter, setProjectFilter] = useState("All");
+  const [transferFrom, setTransferFrom] = useState("");
+  const [transferTo, setTransferTo] = useState("");
+  const [transferring, setTransferring] = useState(false);
   const owners = Array.from(new Set(tasks.map((task) => task.assignee.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const teamOwners = Array.from(new Set([...members.map((member) => member.username), ...owners])).sort((a, b) => a.localeCompare(b));
+  const transferIds = tasks.filter((task) => task.assignee.toLowerCase() === transferFrom.toLowerCase() && (projectFilter === "All" || String(task.project_id) === projectFilter)).map((task) => task.id);
   const visible = tasks.filter((task) =>
     `${task.title} ${task.description} ${task.tag} ${task.assignee}`.toLowerCase().includes(query.toLowerCase()) &&
     (filter === "All" || task.priority === filter) &&
@@ -3287,6 +3312,15 @@ function WorkspaceOverview({ projects, tasks, raidItems, query, filter, onFilter
     </div>
     <div className="overview-project-strip">
       {projects.map((project) => { const projectTasks = tasks.filter((task) => String(task.project_id) === String(project.id)); const complete = projectTasks.filter((task) => task.status === "done").length; const progress = Math.round(complete / Math.max(projectTasks.length, 1) * 100); return <button key={project.id} onClick={() => onOpenProject(project.id)}><div><span className={`project-dot ${project.color}`}/><b>{project.name}</b></div><small>{projectTasks.length} tasks · {progress}% complete</small><i><span style={{ width: `${progress}%` }}/></i></button>; })}
+    </div>
+    <div className="bulk-transfer-panel">
+      <div className="bulk-transfer-copy"><span className="bulk-transfer-icon"><Users size={17}/></span><div><b>Bulk transfer tasks</b><small>Reassign every task from one owner to another{projectFilter === "All" ? " across all projects" : " in the selected project"}.</small></div></div>
+      <div className="bulk-transfer-controls">
+        <label><span>Scope</span><select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}><option value="All">All projects</option>{projects.map((project) => <option key={project.id} value={String(project.id)}>{project.name}</option>)}</select></label>
+        <label><span>From</span><select value={transferFrom} onChange={(event) => setTransferFrom(event.target.value)}><option value="">Choose owner</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}</select></label>
+        <label><span>To</span><select value={transferTo} onChange={(event) => setTransferTo(event.target.value)}><option value="">Choose new owner</option>{teamOwners.filter((owner) => owner.toLowerCase() !== transferFrom.toLowerCase()).map((owner) => <option key={owner} value={owner}>{owner}</option>)}</select></label>
+        <button className="primary" disabled={!transferFrom || !transferTo || !transferIds.length || transferring} onClick={async () => { const scope = projectFilter === "All" ? "all projects" : projects.find((project) => String(project.id) === projectFilter)?.name || "the selected project"; if (!window.confirm(`Transfer ${transferIds.length} task${transferIds.length === 1 ? "" : "s"} from ${transferFrom} to ${transferTo} in ${scope}?`)) return; setTransferring(true); const ok = await onBulkTransfer(transferIds, transferFrom, transferTo); setTransferring(false); if (ok) { setTransferFrom(""); setTransferTo(""); } }}>{transferring ? "Transferring…" : `Transfer ${transferIds.length || ""} task${transferIds.length === 1 ? "" : "s"}`}</button>
+      </div>
     </div>
     <div className="work-panel">
       <div className="work-panel-head overview-task-head">
