@@ -54,7 +54,9 @@ type Project = {
   color: string;
   description: string;
   notes: string;
+  board_columns?: KanbanColumn[] | null;
 };
+type KanbanColumn = { id: string; label: string; tone: string };
 type GeneratedProject = {
   name: string;
   description: string;
@@ -80,6 +82,7 @@ type Task = {
   due: string;
   assignee: string;
   tag: string;
+  board_column?: string | null;
 };
 type TaskInsert = Omit<Task, "id">;
 type Profile = {
@@ -146,6 +149,7 @@ type ActivityEvent = {
 type View =
   | "mywork"
   | "overview"
+  | "board"
   | "plan"
   | "report"
   | "messages"
@@ -241,6 +245,8 @@ function App() {
   const routeView = (): View =>
     window.location.hash === "#overview"
       ? "overview"
+      : window.location.hash === "#board"
+        ? "board"
       : window.location.hash === "#plan"
       ? "plan"
       : window.location.hash === "#report"
@@ -561,6 +567,32 @@ function App() {
     }
   }
 
+  async function moveBoardTask(id: number, boardColumn: string) {
+    const status: Status = boardColumn === "backlog" || boardColumn === "review" || boardColumn === "done" ? boardColumn : "progress";
+    setTasks((current) => current.map((task) => task.id === id ? { ...task, board_column: boardColumn, status } : task));
+    if (user) {
+      const { error } = await supabase.from("tasks").update({ board_column: boardColumn, status }).eq("id", id);
+      if (error) {
+        setNotice(error.message);
+        loadCloudTasks(user);
+      }
+    }
+  }
+
+  async function saveBoardColumns(projectId: ProjectId, boardColumns: KanbanColumn[]) {
+    setProjects((current) => current.map((project) => String(project.id) === String(projectId) ? { ...project, board_columns: boardColumns } : project));
+    if (user) {
+      const { error } = await supabase.from("projects").update({ board_columns: boardColumns }).eq("id", projectId);
+      if (error) {
+        setNotice(error.message);
+        loadCloudTasks(user);
+        return false;
+      }
+    }
+    setNotice("Board columns saved.");
+    return true;
+  }
+
   async function addTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -573,6 +605,7 @@ function App() {
       due: String(form.get("due") || "No date"),
       assignee: String(form.get("assignee")),
       tag: String(form.get("tag") || "General"),
+      board_column: "backlog",
     };
     if (user) {
       const { data, error } = await supabase
@@ -604,14 +637,16 @@ function App() {
     event.preventDefault();
     if (!selectedTask) return;
     const form = new FormData(event.currentTarget);
+    const nextStatus = form.get("status") as Status;
     const changes: TaskInsert = {
       title: String(form.get("title")),
       description: String(form.get("description") || "No description yet."),
-      status: form.get("status") as Status,
+      status: nextStatus,
       priority: form.get("priority") as Priority,
       due: String(form.get("due") || "No date"),
       assignee: String(form.get("assignee")),
       tag: String(form.get("tag") || "General"),
+      board_column: nextStatus === selectedTask.status ? selectedTask.board_column || nextStatus : nextStatus,
     };
     setTasks((current) =>
       current.map((task) =>
@@ -1113,6 +1148,13 @@ function App() {
         <div className="nav-section-label">Project delivery</div>
         <nav className="nav-group" aria-label="Project delivery navigation">
           <a
+            className={`nav-item ${view === "board" ? "active" : ""}`}
+            href="#board"
+          >
+            <LayoutDashboard size={17} />
+            Board
+          </a>
+          <a
             className={`nav-item ${view === "plan" ? "active" : ""}`}
             href="#plan"
           >
@@ -1276,6 +1318,15 @@ function App() {
             <RaciView project={selectedProject} tasks={projectTasks} members={members} />
           ) : view === "diagram" ? (
             <DiagramBuilder projectId={selectedProject.id} projectName={selectedProject.name} />
+          ) : view === "board" ? (
+            <KanbanBoard
+              project={selectedProject}
+              tasks={projectTasks}
+              onMoveTask={moveBoardTask}
+              onOpenTask={setSelectedTask}
+              onAddTask={() => setShowNew(true)}
+              onSaveColumns={saveBoardColumns}
+            />
           ) : view === "activity" ? (
             <ActivityView activities={activities} members={members} />
           ) : projects.length === 0 ? (
@@ -3208,6 +3259,41 @@ function PlanView({
       )}
     </section>
   );
+}
+
+function KanbanBoard({ project, tasks, onMoveTask, onOpenTask, onAddTask, onSaveColumns }: {
+  project: Project;
+  tasks: Task[];
+  onMoveTask: (id: number, columnId: string) => Promise<void>;
+  onOpenTask: (task: Task) => void;
+  onAddTask: () => void;
+  onSaveColumns: (projectId: ProjectId, columns: KanbanColumn[]) => Promise<boolean>;
+}) {
+  const defaults: KanbanColumn[] = columns.map((column) => ({ id: column.id, label: column.label, tone: column.tone }));
+  const activeColumns = project.board_columns?.length ? project.board_columns : defaults;
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState<KanbanColumn[]>(activeColumns);
+  const [draggedTask, setDraggedTask] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { setDraft(activeColumns); }, [project.id, project.board_columns]);
+  const taskColumn = (task: Task) => task.board_column || task.status;
+  const moveColumn = (index: number, direction: -1 | 1) => setDraft((current) => { const next = [...current]; const target = index + direction; if (target < 0 || target >= next.length) return current; [next[index], next[target]] = [next[target], next[index]]; return next; });
+  const save = async () => {
+    if (!draft.length || draft.some((column) => !column.label.trim())) return;
+    setSaving(true);
+    const validIds = new Set(draft.map((column) => column.id));
+    await Promise.all(tasks.filter((task) => !validIds.has(taskColumn(task))).map((task) => onMoveTask(task.id, draft[0].id)));
+    const ok = await onSaveColumns(project.id, draft.map((column) => ({ ...column, label: column.label.trim() })));
+    setSaving(false);
+    if (ok) setEditing(false);
+  };
+  return <section className="kanban-page">
+    <header><div><span>PROJECT DELIVERY</span><h1>{project.name} board</h1><p>Move work through the flow and tailor the columns to this project.</p></div><div><button className="ai-button" onClick={() => { setDraft(activeColumns); setEditing(!editing); }}><SlidersHorizontal size={16}/>{editing ? "Close settings" : "Customise columns"}</button><button className="primary" onClick={onAddTask}><Plus size={16}/>New task</button></div></header>
+    {editing && <div className="kanban-settings"><div className="kanban-settings-head"><div><b>Board columns</b><small>Rename, reorder, add or remove columns for this project.</small></div><button onClick={() => setDraft((current) => [...current, { id: `custom-${Date.now()}`, label: "New column", tone: "violet" }])}><Plus size={14}/>Add column</button></div><div className="kanban-column-editor">{draft.map((column, index) => <div key={column.id}><span className={`status-dot ${column.tone}`}/><input value={column.label} onChange={(event) => setDraft((current) => current.map((item) => item.id === column.id ? { ...item, label: event.target.value } : item))}/><select value={column.tone} onChange={(event) => setDraft((current) => current.map((item) => item.id === column.id ? { ...item, tone: event.target.value } : item))}><option value="slate">Slate</option><option value="blue">Blue</option><option value="amber">Amber</option><option value="green">Green</option><option value="violet">Violet</option><option value="red">Red</option></select><button disabled={index === 0} onClick={() => moveColumn(index, -1)} aria-label="Move column left">←</button><button disabled={index === draft.length - 1} onClick={() => moveColumn(index, 1)} aria-label="Move column right">→</button><button className="remove" disabled={draft.length === 1} onClick={() => setDraft((current) => current.filter((item) => item.id !== column.id))} aria-label="Remove column"><X size={14}/></button></div>)}</div><div className="kanban-settings-actions"><button className="cancel" onClick={() => { setDraft(activeColumns); setEditing(false); }}>Cancel</button><button className="primary" disabled={saving || draft.some((column) => !column.label.trim())} onClick={save}>{saving ? "Saving…" : "Save columns"}</button></div></div>}
+    <div className="kanban-board" style={{ gridTemplateColumns: `repeat(${activeColumns.length}, minmax(255px, 1fr))` }}>
+      {activeColumns.map((column) => { const items = tasks.filter((task) => taskColumn(task) === column.id); return <div className="kanban-column" key={column.id} onDragOver={(event) => event.preventDefault()} onDrop={() => { if (draggedTask !== null) onMoveTask(draggedTask, column.id); setDraggedTask(null); }}><div className="kanban-column-head"><span className={`status-dot ${column.tone}`}/><b>{column.label}</b><em>{items.length}</em><button onClick={onAddTask}><Plus size={14}/></button></div><div className="kanban-cards">{items.map((task) => <article draggable key={task.id} onDragStart={() => setDraggedTask(task.id)} onClick={() => onOpenTask(task)}><div><span className="tag">{task.tag}</span><span className={`priority ${task.priority.toLowerCase()}`}>{task.priority}</span></div><h3>{task.title}</h3><p>{task.description}</p><footer><span><span className="avatar">{initials(task.assignee)}</span>{task.assignee || "Unassigned"}</span><small><CalendarDays size={12}/>{task.due}</small></footer></article>)}{!items.length && <div className="kanban-dropzone">Drop tasks here</div>}</div></div>; })}
+    </div>
+  </section>;
 }
 
 function TaskListItem({
