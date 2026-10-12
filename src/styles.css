@@ -19,9 +19,15 @@ button { cursor: pointer; }
 .project-context { padding: 0 9px 4px; }
 .project-context label { display: block; margin-bottom: 7px; color: #a17d84; font-size: 9px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
 .project-context-controls { display: grid; grid-template-columns: repeat(3,32px); gap: 6px; }
-.project-context select { grid-column: 1 / -1; min-width: 0; width: 100%; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #503b40; padding: 9px 28px 9px 9px; font-size: 9px; font-weight: 700; outline: none; }
-.project-context select:focus { border-color: #b5152b; box-shadow: 0 0 0 3px rgba(181,21,43,.1); }
-.current-project-full-name { margin-top: 8px; color: #765b62; font-size: 9px; font-weight: 700; line-height: 1.4; overflow-wrap: anywhere; }
+.project-picker-trigger { grid-column: 1 / -1; width: 100%; min-height: 42px; display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8px; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #503b40; padding: 9px; text-align: left; font-size: 10px; font-weight: 700; line-height: 1.35; }
+.project-picker-trigger span { white-space: normal; overflow-wrap: anywhere; }
+.project-picker-trigger svg { flex: 0 0 auto; transition: transform .16s ease; }
+.project-picker-trigger[aria-expanded="true"] { border-color: #b5152b; box-shadow: 0 0 0 3px rgba(181,21,43,.1); }
+.project-picker-trigger[aria-expanded="true"] svg { transform: rotate(180deg); }
+.project-picker-menu { grid-column: 1 / -1; width: 100%; max-height: 190px; overflow-y: auto; display: grid; gap: 3px; padding: 5px; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(91,30,42,.12); }
+.project-picker-menu button { width: 100%; display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: 7px; border: 0; border-radius: 6px; background: transparent; color: #5d464c; padding: 8px; text-align: left; font-size: 9px; font-weight: 600; line-height: 1.35; }
+.project-picker-menu button:hover,.project-picker-menu button[aria-selected="true"] { background: #fff0f1; color: #a11930; }
+.project-picker-menu button span:nth-child(2) { white-space: normal; overflow-wrap: anywhere; }
 .project-context-action { width: 32px; height: 32px; border: 1px solid #e9cdd1; border-radius: 8px; background: #fff; color: #9a1a30; display: grid; place-items: center; padding: 0; }
 .project-context-action:hover { background: #f8dce0; border-color: #ddb8be; }
 .project-context-action.ai { color: #6f4b91; background: #fbf7ff; border-color: #dfd3e9; }

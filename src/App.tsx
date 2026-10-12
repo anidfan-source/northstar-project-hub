@@ -224,6 +224,7 @@ function App() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [showAuth, setShowAuth] = useState(false);
   const [showNewProject, setShowNewProject] = useState(false);
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
   const [projectError, setProjectError] = useState("");
   const [showAiBuilder, setShowAiBuilder] = useState(false);
   const [aiDraft, setAiDraft] = useState<GeneratedProject | null>(null);
@@ -1066,25 +1067,23 @@ function App() {
           </div>
         </div>
         <div className="project-context">
-          <label htmlFor="current-project">Current project</label>
+          <label id="current-project-label">Current project</label>
           <div className="project-context-controls">
-            <select
-              id="current-project"
+            <button
+              type="button"
+              className="project-picker-trigger"
               title={selectedProject.name}
-              value={String(selectedProjectId ?? "")}
-              onChange={(event) => {
-                setSelectedProjectId(event.target.value);
-                window.location.hash = "#plan";
-              }}
+              aria-labelledby="current-project-label"
+              aria-expanded={projectPickerOpen}
+              onClick={() => setProjectPickerOpen((open) => !open)}
               disabled={projects.length === 0}
             >
-              {projects.length === 0 && <option value="">No projects yet</option>}
-              {projects.map((project) => (
-                <option key={project.id} value={String(project.id)}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
+              <span>{projects.length ? selectedProject.name : "No projects yet"}</span>
+              <ChevronDown size={15}/>
+            </button>
+            {projectPickerOpen && <div className="project-picker-menu" role="listbox" aria-label="Choose current project">
+              {projects.map((project) => <button type="button" role="option" aria-selected={String(project.id) === String(selectedProjectId)} key={project.id} onClick={() => { setSelectedProjectId(project.id); setProjectPickerOpen(false); window.location.hash = "#plan"; }}><span className={`project-dot ${project.color}`}/><span>{project.name}</span>{String(project.id) === String(selectedProjectId) && <Check size={14}/>}</button>)}
+            </div>}
             <button
               type="button"
               className="project-context-action"
@@ -1121,7 +1120,6 @@ function App() {
               <X size={15} />
             </button>
           </div>
-          {projects.length > 0 && <div className="current-project-full-name">{selectedProject.name}</div>}
         </div>
         <div className="nav-section-label">Workspace</div>
         <nav className="nav-group" aria-label="Main navigation">
