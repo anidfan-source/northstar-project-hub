@@ -21,10 +21,6 @@ begin
     return new;
   end if;
 
-  insert into public.teams (name)
-  values ('Synapse')
-  on conflict (name) do nothing;
-
   select id into synapse_team_id
   from public.teams
   where name = 'Synapse';
@@ -37,17 +33,16 @@ begin
       must_change_password = excluded.must_change_password;
 
   insert into public.projects (user_id, team_id, name, color, description, notes)
-  values
-    (new.id, synapse_team_id, 'AI Support Copilot', 'violet',
-      'Build an AI assistant that summarises customer issues and recommends next actions.',
-      'Discovery: map support journeys. Build: prototype retrieval and response drafting.'),
-    (new.id, synapse_team_id, 'Smart Meeting Studio', 'blue',
-      'Create an AI workspace that turns meetings into actions, decisions and follow-ups.',
-      'Start with transcription import, decision extraction and task assignment.'),
-    (new.id, synapse_team_id, 'Insight Canvas', 'coral',
-      'Build an AI-powered app for turning operational data into concise visual insight packs.',
-      'Prioritise source connections, executive summaries and editable visual stories.')
-  on conflict do nothing;
+  select new.id, synapse_team_id, seed.name, seed.color, seed.description, seed.notes
+  from (values
+    ('AI Support Copilot', 'violet', 'Build an AI assistant that summarises customer issues and recommends next actions.', 'Discovery: map support journeys. Build: prototype retrieval and response drafting.'),
+    ('Smart Meeting Studio', 'blue', 'Create an AI workspace that turns meetings into actions, decisions and follow-ups.', 'Start with transcription import, decision extraction and task assignment.'),
+    ('Insight Canvas', 'coral', 'Build an AI-powered app for turning operational data into concise visual insight packs.', 'Prioritise source connections, executive summaries and editable visual stories.')
+  ) as seed(name, color, description, notes)
+  where not exists (
+    select 1 from public.projects project
+    where project.user_id = new.id and project.name = seed.name
+  );
 
   select id into project_id
   from public.projects
@@ -77,20 +72,5 @@ drop trigger if exists provision_synapse_babyyoda_after_signup on auth.users;
 create trigger provision_synapse_babyyoda_after_signup
 after insert on auth.users
 for each row execute function public.provision_synapse_babyyoda();
-
--- Also provisions the user if the account already exists when this migration runs.
-do $$
-declare
-  existing_user auth.users%rowtype;
-begin
-  select * into existing_user
-  from auth.users
-  where lower(email) = 'babyyoda@northstar.local'
-  limit 1;
-
-  if found then
-    perform public.provision_synapse_babyyoda() from (select existing_user) as ignored;
-  end if;
-end $$;
 
 notify pgrst, 'reload schema';
