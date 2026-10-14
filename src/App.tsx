@@ -89,6 +89,7 @@ type Profile = {
   user_id: string;
   username: string;
   team_id: string;
+  active_team_id?: string | null;
   must_change_password: boolean;
   is_admin: boolean;
 };
@@ -238,6 +239,9 @@ function App() {
   const [syncing, setSyncing] = useState(true);
   const [notice, setNotice] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
+  const effectiveTeamId = profile?.is_admin
+    ? profile.active_team_id || profile.team_id
+    : profile?.team_id;
   const [members, setMembers] = useState<Profile[]>([]);
   const [messages, setMessages] = useState<TeamMessage[]>([]);
   const [raidItems, setRaidItems] = useState<RaidItem[]>([]);
@@ -376,16 +380,19 @@ function App() {
       return;
     }
     setProfile(currentProfile as Profile);
+    const currentTeamId = currentProfile.is_admin
+      ? currentProfile.active_team_id || currentProfile.team_id
+      : currentProfile.team_id;
     const [{ data: teamMembers }, { data: teamMessages }] = await Promise.all([
       supabase
         .from("profiles")
         .select("*")
-        .eq("team_id", currentProfile.team_id)
+        .eq("team_id", currentTeamId)
         .order("username"),
       supabase
         .from("messages")
         .select("*")
-        .eq("team_id", currentProfile.team_id)
+        .eq("team_id", currentTeamId)
         .order("created_at"),
     ]);
     setMembers((teamMembers || []) as Profile[]);
@@ -494,14 +501,14 @@ function App() {
   useEffect(() => {
     if (!user || !profile) return;
     const channel = supabase
-      .channel(`messages:${profile.team_id}`)
+      .channel(`messages:${effectiveTeamId}`)
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
           table: "messages",
-          filter: `team_id=eq.${profile.team_id}`,
+          filter: `team_id=eq.${effectiveTeamId}`,
         },
         (payload) =>
           setMessages((current) => [...current, payload.new as TeamMessage]),
@@ -510,7 +517,7 @@ function App() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, profile]);
+  }, [user, profile, effectiveTeamId]);
 
   const projectTasks = useMemo(
     () =>
@@ -922,6 +929,20 @@ function App() {
     setNotice("Signed out. Local mode is active.");
   }
 
+  async function switchAdminTeam(teamId: string) {
+    if (!user || !profile?.is_admin) return;
+    const { error } = await supabase.rpc("set_admin_team_context", {
+      target_team: teamId,
+    });
+    if (error) {
+      setNotice(error.message);
+      return;
+    }
+    await loadCloudTasks(user);
+    await loadCollaboration(user);
+    setNotice("Team context updated.");
+  }
+
   async function sendMessage(body: string) {
     if (!user || !profile || !body.trim()) return;
     const { error } = await supabase
@@ -929,7 +950,7 @@ function App() {
       .insert({
         body: body.trim(),
         sender_id: user.id,
-        team_id: profile.team_id,
+        team_id: effectiveTeamId,
       });
     if (error) setNotice(error.message);
   }
@@ -944,7 +965,7 @@ function App() {
     const { data } = await supabase
       .from("activity_events")
       .insert({
-        team_id: profile.team_id,
+        team_id: effectiveTeamId,
         actor_id: user.id,
         project_id: projectId || null,
         action,
@@ -963,7 +984,7 @@ function App() {
     if (!user || !profile) return;
     const { data, error } = await supabase
       .from("raid_items")
-      .insert({ ...input, team_id: profile.team_id, created_by: user.id })
+      .insert({ ...input, team_id: effectiveTeamId, created_by: user.id })
       .select()
       .single();
     if (error) setNotice(error.message);
@@ -982,7 +1003,7 @@ function App() {
     if (!user || !profile) return;
     const { data, error } = await supabase
       .from("decisions")
-      .insert({ ...input, team_id: profile.team_id, created_by: user.id })
+      .insert({ ...input, team_id: effectiveTeamId, created_by: user.id })
       .select()
       .single();
     if (error) setNotice(error.message);
@@ -1000,7 +1021,7 @@ function App() {
         task_id: taskId,
         body: body.trim(),
         author_id: user.id,
-        team_id: profile.team_id,
+        team_id: effectiveTeamId,
       })
       .select()
       .single();
@@ -1028,7 +1049,7 @@ function App() {
         .insert({
           task_id: taskId,
           depends_on_task_id: dependsOnTaskId,
-          team_id: profile.team_id,
+          team_id: effectiveTeamId,
           created_by: user.id,
         })
         .select("task_id,depends_on_task_id")
@@ -1298,7 +1319,7 @@ function App() {
               onSignIn={() => setShowAuth(true)}
             />
           ) : view === "admin" && profile?.is_admin ? (
-            <AdminView />
+            <AdminView activeTeamId={effectiveTeamId || ""} onTeamSwitch={switchAdminTeam} />
           ) : view === "portfolio" ? (
             <PortfolioView
               projects={projects}
@@ -3288,10 +3309,14 @@ async function adminFunctionError(invokeError: unknown, data: { error?: string }
   return (invokeError as { message?: string } | null)?.message || "The admin request could not be completed.";
 }
 
-function AdminView() {
+function AdminView({ activeTeamId, onTeamSwitch }: {
+  activeTeamId: string;
+  onTeamSwitch: (teamId: string) => Promise<void>;
+}) {
   const [teams, setTeams] = useState<AdminTeam[]>([]);
   const [adminMembers, setAdminMembers] = useState<AdminMember[]>([]);
   const [busy, setBusy] = useState(false);
+  const [switchingTeam, setSwitchingTeam] = useState(false);
   const [error, setError] = useState("");
   const [createdLogin, setCreatedLogin] = useState<{ username: string; password: string } | null>(null);
   const load = useCallback(async () => {
@@ -3319,6 +3344,7 @@ function AdminView() {
     <header><div><span>APPLICATION ADMINISTRATION</span><h1>Teams & members</h1><p>Create team workspaces and onboard people with a temporary password.</p></div><span className="admin-badge"><ShieldAlert size={15}/>Admin only</span></header>
     {error && <div className="admin-error">{error}</div>}
     {createdLogin && <div className="credential-banner"><div><b>Member created successfully</b><span>Share these temporary credentials securely. They are shown here once.</span></div><code>{createdLogin.username} / {createdLogin.password}</code><button onClick={() => navigator.clipboard.writeText(`${createdLogin.username}\n${createdLogin.password}`)}>Copy</button></div>}
+    <div className="team-context-card"><div><span className="team-context-icon"><Users size={18}/></span><div><b>Team context</b><small>Choose the team workspace you want to view and manage.</small></div></div><label>Viewing team<select value={activeTeamId} disabled={switchingTeam || !teams.length} onChange={async (event) => { setSwitchingTeam(true); await onTeamSwitch(event.target.value); setSwitchingTeam(false); }}><option value="" disabled>Select a team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label></div>
     <div className="admin-actions-grid">
       <form onSubmit={addTeam}><div className="admin-form-title"><span><Users size={17}/></span><div><b>Add a team</b><small>Create a separate project workspace.</small></div></div><label>Team name<input name="name" required minLength={2} maxLength={80}/></label><button className="primary" disabled={busy}><Plus size={15}/>Create team</button></form>
       <form onSubmit={addMember}><div className="admin-form-title"><span><LogIn size={17}/></span><div><b>Add a member</b><small>The member must change their password at first sign-in.</small></div></div><div className="form-grid"><label>Username<input name="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+"/></label><label>Team<select name="team_id" required defaultValue=""><option value="" disabled>Choose team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label></div><label>Temporary password<input name="password" type="text" required minLength={8}/></label><button className="primary" disabled={busy || !teams.length}><Plus size={15}/>Create member</button></form>
