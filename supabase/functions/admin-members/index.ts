@@ -5,6 +5,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+const errorMessage = (error: unknown) => {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object' && 'message' in error) return String(error.message)
+  return 'Admin request failed.'
+}
 
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -29,7 +34,8 @@ Deno.serve(async (request) => {
         admin.from('teams').select('id,name,created_at').order('name'),
         admin.from('profiles').select('user_id,username,team_id,must_change_password,is_admin,created_at').order('username'),
       ])
-      if (teamsError || profilesError) throw teamsError || profilesError
+      if (teamsError) return json({ error: `Unable to load teams: ${errorMessage(teamsError)}` }, 400)
+      if (profilesError) return json({ error: `Unable to load members: ${errorMessage(profilesError)}` }, 400)
       return json({ teams, profiles })
     }
     if (body.action === 'create_team') {
@@ -63,6 +69,6 @@ Deno.serve(async (request) => {
     }
     return json({ error: 'Unknown admin action.' }, 400)
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : 'Admin request failed.' }, 400)
+    return json({ error: errorMessage(error) }, 400)
   }
 })
