@@ -1,6 +1,6 @@
 # Northstar
 
-A focused project-management MVP built with React, TypeScript, and Vite.
+A focused project-management MVP .
 
 ## Features
 
