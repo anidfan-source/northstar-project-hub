@@ -90,6 +90,7 @@ type Profile = {
   username: string;
   team_id: string;
   must_change_password: boolean;
+  is_admin: boolean;
 };
 type TeamMessage = {
   id: number;
@@ -157,7 +158,8 @@ type View =
   | "governance"
   | "raci"
   | "diagram"
-  | "activity";
+  | "activity"
+  | "admin";
 
 const columns: { id: Status; label: string; tone: string }[] = [
   { id: "backlog", label: "Backlog", tone: "slate" },
@@ -244,7 +246,9 @@ function App() {
   const [dependencies, setDependencies] = useState<TaskDependency[]>([]);
   const [activities, setActivities] = useState<ActivityEvent[]>([]);
   const routeView = (): View =>
-    window.location.hash === "#overview"
+    window.location.hash === "#admin"
+      ? "admin"
+    : window.location.hash === "#overview"
       ? "overview"
       : window.location.hash === "#board"
         ? "board"
@@ -1200,6 +1204,10 @@ function App() {
             <History size={17} />
             Activity
           </a>
+          {profile?.is_admin && <a className={`nav-item ${view === "admin" ? "active" : ""}`} href="#admin">
+            <ShieldAlert size={17} />
+            Admin
+          </a>}
         </nav>
         <div className="sidebar-bottom">
           <div className="profile">
@@ -1289,6 +1297,8 @@ function App() {
               onSend={sendMessage}
               onSignIn={() => setShowAuth(true)}
             />
+          ) : view === "admin" && profile?.is_admin ? (
+            <AdminView />
           ) : view === "portfolio" ? (
             <PortfolioView
               projects={projects}
@@ -3259,6 +3269,48 @@ function PlanView({
       )}
     </section>
   );
+}
+
+type AdminTeam = { id: string; name: string; created_at: string };
+type AdminMember = Profile & { created_at: string };
+
+function AdminView() {
+  const [teams, setTeams] = useState<AdminTeam[]>([]);
+  const [adminMembers, setAdminMembers] = useState<AdminMember[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [createdLogin, setCreatedLogin] = useState<{ username: string; password: string } | null>(null);
+  const load = useCallback(async () => {
+    const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "list" } });
+    if (invokeError || data?.error) { setError(invokeError?.message || data.error); return; }
+    setTeams(data.teams || []); setAdminMembers(data.profiles || []);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const addTeam = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError("");
+    const form = new FormData(event.currentTarget);
+    const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "create_team", name: String(form.get("name") || "") } });
+    setBusy(false); if (invokeError || data?.error) return setError(invokeError?.message || data.error);
+    event.currentTarget.reset(); await load();
+  };
+  const addMember = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setError(""); setCreatedLogin(null);
+    const form = new FormData(event.currentTarget); const username = String(form.get("username") || "").trim(); const password = String(form.get("password") || "");
+    const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "create_user", username, password, team_id: String(form.get("team_id") || "") } });
+    setBusy(false); if (invokeError || data?.error) return setError(invokeError?.message || data.error);
+    setCreatedLogin({ username, password }); event.currentTarget.reset(); await load();
+  };
+  const teamName = (id: string) => teams.find((team) => team.id === id)?.name || "Unknown team";
+  return <section className="admin-page">
+    <header><div><span>APPLICATION ADMINISTRATION</span><h1>Teams & members</h1><p>Create team workspaces and onboard people with a temporary password.</p></div><span className="admin-badge"><ShieldAlert size={15}/>Admin only</span></header>
+    {error && <div className="admin-error">{error}</div>}
+    {createdLogin && <div className="credential-banner"><div><b>Member created successfully</b><span>Share these temporary credentials securely. They are shown here once.</span></div><code>{createdLogin.username} / {createdLogin.password}</code><button onClick={() => navigator.clipboard.writeText(`${createdLogin.username}\n${createdLogin.password}`)}>Copy</button></div>}
+    <div className="admin-actions-grid">
+      <form onSubmit={addTeam}><div className="admin-form-title"><span><Users size={17}/></span><div><b>Add a team</b><small>Create a separate project workspace.</small></div></div><label>Team name<input name="name" required minLength={2} maxLength={80} placeholder="e.g. Synapse"/></label><button className="primary" disabled={busy}><Plus size={15}/>Create team</button></form>
+      <form onSubmit={addMember}><div className="admin-form-title"><span><LogIn size={17}/></span><div><b>Add a member</b><small>The member must change their password at first sign-in.</small></div></div><div className="form-grid"><label>Username<input name="username" required minLength={3} maxLength={32} pattern="[A-Za-z0-9._-]+" placeholder="e.g. CBossems"/></label><label>Team<select name="team_id" required defaultValue=""><option value="" disabled>Choose team</option>{teams.map((team) => <option key={team.id} value={team.id}>{team.name}</option>)}</select></label></div><label>Temporary password<input name="password" type="text" required minLength={8} placeholder="At least 8 characters"/></label><button className="primary" disabled={busy || !teams.length}><Plus size={15}/>Create member</button></form>
+    </div>
+    <div className="admin-directory"><header><div><h2>Member directory</h2><p>{adminMembers.length} members across {teams.length} teams</p></div></header><div className="admin-table"><div className="admin-row head"><span>Member</span><span>Team</span><span>Access</span><span>First login</span></div>{adminMembers.map((member) => <div className="admin-row" key={member.user_id}><span><span className="avatar">{initials(member.username)}</span><b>{member.username}</b></span><span>{teamName(member.team_id)}</span><span>{member.is_admin ? "Administrator" : "Member"}</span><span>{member.must_change_password ? "Password change required" : "Active"}</span></div>)}</div></div>
+  </section>;
 }
 
 function KanbanBoard({ project, tasks, onMoveTask, onOpenTask, onAddTask, onSaveColumns }: {
