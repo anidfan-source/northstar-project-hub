@@ -3274,6 +3274,20 @@ function PlanView({
 type AdminTeam = { id: string; name: string; created_at: string };
 type AdminMember = Profile & { created_at: string };
 
+async function adminFunctionError(invokeError: unknown, data: { error?: string } | null) {
+  if (data?.error) return data.error;
+  const context = (invokeError as { context?: Response } | null)?.context;
+  if (context && typeof context.clone === "function") {
+    try {
+      const payload = await context.clone().json() as { error?: string };
+      if (payload?.error) return payload.error;
+    } catch {
+      // Fall back to the client message when a gateway response is not JSON.
+    }
+  }
+  return (invokeError as { message?: string } | null)?.message || "The admin request could not be completed.";
+}
+
 function AdminView() {
   const [teams, setTeams] = useState<AdminTeam[]>([]);
   const [adminMembers, setAdminMembers] = useState<AdminMember[]>([]);
@@ -3282,7 +3296,7 @@ function AdminView() {
   const [createdLogin, setCreatedLogin] = useState<{ username: string; password: string } | null>(null);
   const load = useCallback(async () => {
     const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "list" } });
-    if (invokeError || data?.error) { setError(invokeError?.message || data.error); return; }
+    if (invokeError || data?.error) { setError(await adminFunctionError(invokeError, data)); return; }
     setTeams(data.teams || []); setAdminMembers(data.profiles || []);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -3290,14 +3304,14 @@ function AdminView() {
     event.preventDefault(); setBusy(true); setError("");
     const form = new FormData(event.currentTarget);
     const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "create_team", name: String(form.get("name") || "") } });
-    setBusy(false); if (invokeError || data?.error) return setError(invokeError?.message || data.error);
+    setBusy(false); if (invokeError || data?.error) return setError(await adminFunctionError(invokeError, data));
     event.currentTarget.reset(); await load();
   };
   const addMember = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setError(""); setCreatedLogin(null);
     const form = new FormData(event.currentTarget); const username = String(form.get("username") || "").trim(); const password = String(form.get("password") || "");
     const { data, error: invokeError } = await supabase.functions.invoke("admin-members", { body: { action: "create_user", username, password, team_id: String(form.get("team_id") || "") } });
-    setBusy(false); if (invokeError || data?.error) return setError(invokeError?.message || data.error);
+    setBusy(false); if (invokeError || data?.error) return setError(await adminFunctionError(invokeError, data));
     setCreatedLogin({ username, password }); event.currentTarget.reset(); await load();
   };
   const teamName = (id: string) => teams.find((team) => team.id === id)?.name || "Unknown team";

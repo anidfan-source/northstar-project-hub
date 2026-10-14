@@ -30,6 +30,13 @@ Deno.serve(async (request) => {
     if (body.action === 'create_team') {
       const name = String(body.name || '').trim()
       if (name.length < 2 || name.length > 80) return json({ error: 'Team name must be 2–80 characters.' }, 400)
+      const { data: existingTeam, error: lookupError } = await admin
+        .from('teams')
+        .select('id,name,created_at')
+        .ilike('name', name)
+        .maybeSingle()
+      if (lookupError) throw lookupError
+      if (existingTeam) return json({ error: `A team named "${existingTeam.name}" already exists.` }, 409)
       const { data, error } = await admin.from('teams').insert({ name }).select('id,name,created_at').single()
       if (error) throw error
       return json({ team: data })
