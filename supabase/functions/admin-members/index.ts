@@ -12,14 +12,16 @@ Deno.serve(async (request) => {
     const authHeader = request.headers.get('Authorization') || ''
     const url = Deno.env.get('SUPABASE_URL')!
     const accessToken = authHeader.replace(/^Bearer\s+/i, '')
-    const anon = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!)
-    const { data: { user }, error: userError } = await anon.auth.getUser(accessToken)
+    const userClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, {
+      global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    })
+    const { data: { user }, error: userError } = await userClient.auth.getUser(accessToken)
     if (userError) return json({ error: 'Your session could not be verified. Please sign out and sign in again.' }, 401)
     if (!user) return json({ error: 'Sign in required.' }, 401)
-    const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    const { data: profile, error: profileError } = await admin.from('profiles').select('is_admin').eq('user_id', user.id).single()
+    const { data: profile, error: profileError } = await userClient.from('profiles').select('is_admin').eq('user_id', user.id).single()
     if (profileError) return json({ error: 'Your administrator profile could not be loaded.' }, 403)
     if (!profile?.is_admin) return json({ error: 'Administrator access required.' }, 403)
+    const admin = createClient(url, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
     const body = await request.json().catch(() => ({}))
     if (body.action === 'list') {
